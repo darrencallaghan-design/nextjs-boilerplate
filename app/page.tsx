@@ -1,4 +1,4 @@
-"use client";
+ "use client";
 
 import { useState, useCallback } from "react";
 
@@ -55,33 +55,48 @@ function fallbackContacts(orgName: string, orgType: string): Contact[] {
   const domain = orgName.toLowerCase().replace(/[^a-z0-9]/g, "") + ".org";
   return names.map((name, i) => ({
     name, title: roles[i] || "Director", company: orgName,
-    email: name.split(" ")[0].toLowerCase() + "@" + domain, source: "Generated",
+    email: name.split(" ")[0].toLowerCase() + "@" + domain, source: "Fallback",
   }));
 }
 
-function safeExtractContacts(data: unknown): Contact[] {
-  if (!data || typeof data !== "object") return [];
-  const d = data as Record<string, unknown>;
-  const tries = [d?.contacts, (d?.data as Record<string,unknown>)?.contacts, d?.results, d?.data];
-  for (const t of tries) { if (Array.isArray(t) && t.length > 0) return t as Contact[]; }
-  return [];
-}
-
-async function callAPI(messages: {role: string; content: string}[], mcpServers: unknown[] = [], timeoutMs = 25000) {
-  const body: Record<string, unknown> = { model: "claude-sonnet-4-20250514", max_tokens: 1000, messages };
+async function callAPI(
+  messages: { role: string; content: string }[],
+  mcpServers: unknown[] = [],
+  timeoutMs = 30000
+) {
+  const body: Record<string, unknown> = {
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 1000,
+    messages,
+  };
   if (mcpServers.length > 0) body.mcp_servers = mcpServers;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body), signal: controller.signal,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
     });
     clearTimeout(timer);
-    if (!res.ok) { const txt = await res.text(); throw new Error(`API ${res.status}: ${txt.slice(0, 120)}`); }
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`API ${res.status}: ${txt.slice(0, 200)}`);
+    }
     const data = await res.json();
-    const texts = (data?.content || []).filter((b: {type:string}) => b?.type === "text").map((b: {text:string}) => b.text).join("\n");
-    return texts || "";
+    // Collect all text and tool result blocks
+    const texts = (data?.content || [])
+      .filter((b: { type: string }) => b?.type === "text")
+      .map((b: { text: string }) => b.text)
+      .join("\n");
+    const toolResults = (data?.content || [])
+      .filter((b: { type: string }) => b?.type === "mcp_tool_result")
+      .map((b: { content?: { text: string }[] }) => b?.content?.[0]?.text || "")
+      .join("\n");
+    return texts || toolResults || "";
   } catch (err) {
     clearTimeout(timer);
     if ((err as Error).name === "AbortError") throw new Error("TIMEOUT");
@@ -90,7 +105,65 @@ async function callAPI(messages: {role: string; content: string}[], mcpServers: 
 }
 
 function parseJSON(raw: string) {
-  try { return JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { return null; }
+  try {
+    return JSON.parse(raw.replace(/```json|```/g, "").trim());
+  } catch {
+    return null;
+  }
+}
+
+// Extract contacts from ZoomInfo MCP response text
+function extractContactsFromText(text: string, orgName: string): Contact[] {
+  // Try JSON parse first
+  const json = parseJSON(text);
+  if (json) {
+    const tries = [json?.contacts, json?.data?.contacts, json?.results, json?.data];
+    for (const t of tries) {
+      if (Array.isArray(t) && t.length > 0) {
+        return (t as Record<string, string>[]).slice(0, 3).map(c => ({
+          name: c?.name || c?.full_name || "Unknown",
+          title: c?.title || c?.job_title || "Director",
+          company: c?.company || c?.organization || orgName,
+          email: c?.email || c?.email_address || "",
+          source: "ZoomInfo",
+        }));
+      }
+    }
+  }
+
+  // Try to parse structured text response from MCP
+  const contacts: Contact[] = [];
+  const lines = text.split("\n");
+  let current: Partial<Contact> = {};
+
+  for (const line of lines) {
+    const l = line.trim();
+    if (!l) {
+      if (current.name) {
+        contacts.push({
+          name: current.name || "Unknown",
+          title: current.title || "Director",
+          company: current.company || orgName,
+          email: current.email || "",
+          source: "ZoomInfo",
+        });
+        current = {};
+      }
+      continue;
+    }
+    if (l.match(/^name[:\s]/i)) current.name = l.replace(/^name[:\s]*/i, "").trim();
+    else if (l.match(/^title[:\s]|^role[:\s]/i)) current.title = l.replace(/^(title|role)[:\s]*/i, "").trim();
+    else if (l.match(/^email[:\s]/i)) current.email = l.replace(/^email[:\s]*/i, "").trim();
+    else if (l.match(/^company[:\s]|^org[:\s]/i)) current.company = l.replace(/^(company|org)[:\s]*/i, "").trim();
+  }
+  if (current.name) {
+    contacts.push({
+      name: current.name, title: current.title || "Director",
+      company: current.company || orgName, email: current.email || "", source: "ZoomInfo",
+    });
+  }
+
+  return contacts.slice(0, 3);
 }
 
 function Steps({ steps }: { steps: StepState[] }) {
@@ -129,17 +202,18 @@ export default function EngineAgent() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [sent, setSent] = useState<SentItem[]>([]);
-  const [logs, setLogs] = useState<{msg: string; cls: string}[]>([]);
+  const [logs, setLogs] = useState<{ msg: string; cls: string }[]>([]);
   const [status, setStatus] = useState({ msg: "Enter an org name and run the workflow", cls: "" });
   const [stepStates, setStepStates] = useState<StepState[]>([
-    { label: "Find\nContacts", state: "" },
+    { label: "ZoomInfo\nLookup", state: "" },
     { label: "Pull\nEmails", state: "" },
     { label: "Draft\nEmails", state: "" },
     { label: "Review\n& Send", state: "" },
   ]);
 
   const addLog = useCallback((msg: string, cls = "") => setLogs(prev => [...prev, { msg, cls }]), []);
-  const setStep = useCallback((idx: number, state: string) => setStepStates(prev => prev.map((s, i) => i === idx ? { ...s, state } : s)), []);
+  const setStep = useCallback((idx: number, state: string) =>
+    setStepStates(prev => prev.map((s, i) => i === idx ? { ...s, state } : s)), []);
 
   const resetAll = () => {
     setContacts([]); setDrafts([]); setLogs([]);
@@ -155,56 +229,128 @@ export default function EngineAgent() {
     resetAll();
 
     try {
+      // ── STEP 1: ZoomInfo Lookup ──────────────────────
       setStep(0, "active");
-      setStatus({ msg: "Searching for contacts…", cls: "" });
-      addLog("Querying contacts for: " + orgName, "info");
+      setStatus({ msg: "Searching ZoomInfo for real contacts…", cls: "" });
+      addLog("Querying ZoomInfo for: " + orgName, "info");
 
-      let parsedContacts: Contact[] = [];
-      const genRaw = await callAPI([{ role: "user", content: `Generate 3 realistic decision-maker contacts for "${orgName}" (${orgType}). ${orgContext ? "Context: " + orgContext : ""}\nReturn ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","company":"${orgName}","email":"email@domain.org"}]}` }]);
-      const gp = parseJSON(genRaw);
-      if (gp) parsedContacts = safeExtractContacts(gp);
-      if (!parsedContacts.length) parsedContacts = fallbackContacts(orgName, orgType);
-      addLog(`Found ${parsedContacts.length} contacts`, "ok");
+      let finalContacts: Contact[] = [];
 
-      const normalized: Contact[] = parsedContacts.slice(0, 3).map((c: Partial<Contact>) => ({
-        name: c?.name || "Unknown", title: c?.title || "Director",
-        company: c?.company || orgName, email: c?.email || "", source: "Generated",
-      }));
+      try {
+        const ziRaw = await callAPI(
+          [{
+            role: "user",
+            content: `Use ZoomInfo to search for decision-maker contacts at "${orgName}" which is a ${orgType}. 
+Find up to 3 contacts with titles like Executive Director, VP of Programs, Director of Events, or similar leadership roles.
+Return their full name, title, company, and email address.
+Format the response as JSON: {"contacts":[{"name":"Full Name","title":"Title","company":"${orgName}","email":"email@domain.com"}]}`
+          }],
+          [{ type: "url", url: "https://mcp.zoominfo.com/mcp", name: "zoominfo-mcp" }],
+          30000
+        );
+
+        addLog("ZoomInfo responded", "info");
+        finalContacts = extractContactsFromText(ziRaw, orgName);
+
+        if (finalContacts.length > 0) {
+          addLog(`✓ Found ${finalContacts.length} real contacts from ZoomInfo`, "ok");
+        } else {
+          addLog("ZoomInfo returned no contacts — using AI fallback", "info");
+        }
+      } catch (ziErr) {
+        addLog("ZoomInfo lookup failed: " + (ziErr as Error).message, "err");
+        addLog("Falling back to AI-generated contacts", "info");
+      }
+
+      // Fallback: generate contacts via Claude if ZoomInfo returned nothing
+      if (finalContacts.length === 0) {
+        const genRaw = await callAPI([{
+          role: "user",
+          content: `Generate 3 realistic decision-maker contacts for "${orgName}" (${orgType}). ${orgContext ? "Context: " + orgContext : ""}
+Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","company":"${orgName}","email":"email@domain.org"}]}`
+        }]);
+        const gp = parseJSON(genRaw);
+        if (gp) {
+          const tries = [gp?.contacts, gp?.data?.contacts, gp?.results];
+          for (const t of tries) {
+            if (Array.isArray(t) && t.length > 0) { finalContacts = t; break; }
+          }
+        }
+        if (!finalContacts.length) finalContacts = fallbackContacts(orgName, orgType);
+        finalContacts = finalContacts.slice(0, 3).map((c: Partial<Contact>) => ({
+          name: c?.name || "Unknown", title: c?.title || "Director",
+          company: c?.company || orgName, email: c?.email || "", source: "Generated",
+        }));
+      }
+
       setStep(0, "done");
 
+      // ── STEP 2: Enrich Emails ────────────────────────
       setStep(1, "active");
       setStatus({ msg: "Enriching emails…", cls: "" });
-      const enriched = normalized.map(c => {
+
+      const enriched = finalContacts.map(c => {
         if (!c.email) {
           const domain = orgName.toLowerCase().replace(/[^a-z0-9]/g, "") + ".org";
           c.email = c.name.split(" ")[0].toLowerCase() + "@" + domain;
+          addLog("Generated email for " + c.name, "info");
         }
         return c;
       });
+
       setContacts(enriched);
       setStep(1, "done");
       addLog("Step 2 done — emails ready", "ok");
 
+      // ── STEP 3: Draft Emails ─────────────────────────
       setStep(2, "active");
       setStatus({ msg: "Drafting personalized emails…", cls: "" });
+
       const newDrafts: Draft[] = [];
       for (const contact of enriched) {
-        const draftRaw = await callAPI([{ role: "user", content: `You are a business development rep at Engine.com — a B2B travel platform for group travel.\n\nWrite a short outreach email to:\nName: ${contact.name}\nTitle: ${contact.title}\nOrg: ${contact.company} (${orgType})\n${orgContext ? "Context: " + orgContext : ""}\n\nRules: Under 150 words, reference group travel needs, pitch Engine.com, end with ask for 15-min call, human tone.\n\nReturn ONLY valid JSON:\n{"subject":"subject line","body":"email body"}` }]);
+        const draftRaw = await callAPI([{
+          role: "user",
+          content: `You are a business development rep at Engine.com — a B2B travel platform for group travel (conferences, events, student trips).
+
+Write a short outreach email to:
+Name: ${contact.name}
+Title: ${contact.title}
+Org: ${contact.company} (${orgType})
+${orgContext ? "Context: " + orgContext : ""}
+
+Rules:
+- Under 150 words
+- Reference their likely group travel / event needs
+- Pitch Engine.com (group booking, cost savings, dedicated support)
+- End with ask for a 15-min call
+- Human tone, not a template
+
+Return ONLY valid JSON:
+{"subject":"subject line","body":"email body"}`
+        }]);
+
         const dp = parseJSON(draftRaw);
         newDrafts.push({
-          to: contact.name, email: contact.email,
+          to: contact.name,
+          email: contact.email,
           subject: dp?.subject || `Partnership Opportunity — Engine.com × ${orgName}`,
-          body: dp?.body || `Hi ${contact.name.split(" ")[0]},\n\nWanted to reach out about Engine.com and ${contact.company}. We simplify group travel for events — saving time and money.\n\nWould love a quick 15-min call.\n\nBest,\nDarren`,
-          sentAt: null, sending: false,
+          body: dp?.body || `Hi ${contact.name.split(" ")[0]},\n\nWanted to reach out about Engine.com and ${contact.company}. We help organizations simplify group travel for events — saving time and money.\n\nWould love a quick 15-min call.\n\nBest,\nDarren`,
+          sentAt: null,
+          sending: false,
         });
         addLog("Draft ready for " + contact.name, "ok");
       }
+
       setDrafts(newDrafts);
       setStep(2, "done");
+      addLog(`Step 3 done — ${newDrafts.length} drafts`, "ok");
+
+      // ── STEP 4: Ready ────────────────────────────────
       setStep(3, "done");
       setStatus({ msg: "✓ Drafts ready — review and send", cls: "success" });
       addLog("Workflow complete", "ok");
       setTab("drafts");
+
     } catch (err) {
       addLog("Error: " + (err as Error).message, "err");
       setStatus({ msg: "Error: " + (err as Error).message, cls: "error" });
@@ -229,12 +375,12 @@ export default function EngineAgent() {
     } catch (err) {
       addLog("Send failed: " + (err as Error).message, "err");
       setDrafts(prev => prev.map((d, idx) => idx === i ? { ...d, sending: false } : d));
+      alert("Send failed: " + (err as Error).message);
     }
   };
 
   return (
     <div style={{ fontFamily: "'IBM Plex Sans', monospace", background: BG, color: "#e8e8e8", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      {/* Header */}
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px", borderBottom: `1px solid ${BORDER}`, background: SURFACE }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 36, height: 36, background: ACCENT, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, color: "#000" }}>E</div>
@@ -254,21 +400,27 @@ export default function EngineAgent() {
       </header>
 
       <div style={{ display: "flex", flex: 1 }}>
-        {/* Left Panel */}
         <div style={{ width: 360, minWidth: 320, borderRight: `1px solid ${BORDER}`, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 18 }}>
             <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: MUTED, marginBottom: 14 }}>Target Organization</div>
+
             <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>Org Name</div>
-            <input style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box" }} value={orgName} onChange={e => setOrgName(e.target.value)} placeholder="e.g. BPA, DECA, SkillsUSA" />
+            <input style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+              value={orgName} onChange={e => setOrgName(e.target.value)} placeholder="e.g. BPA, DECA, SkillsUSA" />
+
             <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6, marginTop: 14 }}>Org Type</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {ORG_TYPES.map(t => (
                 <button key={t} onClick={() => setOrgType(t)} style={{ padding: "9px 10px", background: orgType === t ? "rgba(245,197,24,0.1)" : BG, border: `1px solid ${orgType === t ? ACCENT : BORDER}`, borderRadius: 5, color: orgType === t ? ACCENT : MUTED, fontSize: 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{t}</button>
               ))}
             </div>
+
             <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6, marginTop: 14 }}>Context (Optional)</div>
-            <textarea style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 72, boxSizing: "border-box" }} value={orgContext} onChange={e => setOrgContext(e.target.value)} placeholder="e.g. Runs national conferences with 10k+ attendees..." />
-            <button onClick={runWorkflow} disabled={running || !orgName} style={{ width: "100%", padding: "13px", background: running || !orgName ? "#333" : ACCENT, border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: 12, fontWeight: 700, color: running || !orgName ? MUTED : "#000", cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
+            <textarea style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 72, boxSizing: "border-box" }}
+              value={orgContext} onChange={e => setOrgContext(e.target.value)} placeholder="e.g. Runs national conferences with 10k+ attendees..." />
+
+            <button onClick={runWorkflow} disabled={running || !orgName}
+              style={{ width: "100%", padding: "13px", background: running || !orgName ? "#333" : ACCENT, border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: 12, fontWeight: 700, color: running || !orgName ? MUTED : "#000", cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
               {running ? "Running…" : "→ Run Full Workflow"}
             </button>
           </div>
@@ -284,7 +436,6 @@ export default function EngineAgent() {
           </div>
         </div>
 
-        {/* Right Panel */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", borderBottom: `1px solid ${BORDER}`, padding: "0 20px", background: SURFACE }}>
             {["contacts", "drafts", "sent"].map(t => (
@@ -308,7 +459,7 @@ export default function EngineAgent() {
                     <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{c.title} · {c.company}</div>
                     <div style={{ fontFamily: "monospace", fontSize: 10, color: INFO, marginTop: 5 }}>{c.email}</div>
                   </div>
-                  <div style={{ fontSize: 9, padding: "3px 7px", borderRadius: 3, background: "rgba(245,197,24,0.1)", color: ACCENT, letterSpacing: "0.08em", textTransform: "uppercase" }}>{c.source}</div>
+                  <div style={{ fontSize: 9, padding: "3px 7px", borderRadius: 3, background: c.source === "ZoomInfo" ? "rgba(96,165,250,0.1)" : "rgba(245,197,24,0.1)", color: c.source === "ZoomInfo" ? INFO : ACCENT, letterSpacing: "0.08em", textTransform: "uppercase" }}>{c.source}</div>
                 </div>
               ))
             )}
@@ -326,7 +477,8 @@ export default function EngineAgent() {
                   </div>
                   <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{d.body}</div>
                   {!d.sentAt && (
-                    <button onClick={() => sendEmail(i)} disabled={d.sending} style={{ marginTop: 12, padding: "7px 14px", background: d.sending ? "#333" : ACCENT, color: d.sending ? MUTED : "#000", border: "none", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: d.sending ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                    <button onClick={() => sendEmail(i)} disabled={d.sending}
+                      style={{ marginTop: 12, padding: "7px 14px", background: d.sending ? "#333" : ACCENT, color: d.sending ? MUTED : "#000", border: "none", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: d.sending ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                       {d.sending ? "Sending…" : "Send via Gmail"}
                     </button>
                   )}
