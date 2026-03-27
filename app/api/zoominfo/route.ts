@@ -13,17 +13,21 @@ export async function POST(req: NextRequest) {
 ${orgContext ? "Context: " + orgContext : ""}
 Find up to 3 contacts with titles like Executive Director, VP of Programs, Director of Events, or similar leadership roles.
 Return their full name, title, company, and email address.
-Format the response as JSON: {"contacts":[{"name":"Full Name","title":"Title","company":"${orgName}","email":"email@domain.com"}]}`
-      }
+Format the response as JSON: {"contacts":[{"name":"Full Name","title":"Title","company":"${orgName}","email":"email@domain.com"}]}`,
+      },
     ],
     mcp_servers: [
-      { type: "url", url: "https://mcp.zoominfo.com/mcp", name: "zoominfo-mcp" }
-    ]
+      { type: "url", url: "https://mcp.zoominfo.com/mcp", name: "zoominfo-mcp" },
+    ],
   };
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+      "anthropic-version": "2023-06-01",
+    },
     body: JSON.stringify(body),
   });
 
