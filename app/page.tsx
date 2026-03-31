@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useUser, UserButton } from "@clerk/nextjs";
 
 const ACCENT = "#f5c518";
 const BG = "#0e0e0e";
@@ -139,7 +140,7 @@ function Steps({ steps }: { steps: StepState[] }) {
 }
 
 // ── STYLE ONBOARDING MODAL ────────────────────────────────────────────────────
-function StyleOnboarding({ onComplete }: { onComplete: (profile: StyleProfile) => void }) {
+function StyleOnboarding({ userName, onComplete }: { userName: string; onComplete: (profile: StyleProfile) => void }) {
   const [step, setStep] = useState(0);
   const [profile, setProfile] = useState<StyleProfile>({ tone: "", length: "", signoff: "", focus: "", extra: "" });
 
@@ -154,7 +155,7 @@ function StyleOnboarding({ onComplete }: { onComplete: (profile: StyleProfile) =
     },
     {
       key: "signoff", question: "What's your usual email sign-off?",
-      options: ["Best, [name]", "Thanks, [name]", "Cheers, [name]", "Talk soon, [name]"],
+      options: [`Best, ${userName}`, `Thanks, ${userName}`, `Cheers, ${userName}`, `Talk soon, ${userName}`],
     },
     {
       key: "focus", question: "What do you lead with in outreach?",
@@ -181,7 +182,7 @@ function StyleOnboarding({ onComplete }: { onComplete: (profile: StyleProfile) =
           Style Setup — {step + 1} of {questions.length}
         </div>
         <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>{current.question}</div>
-        <div style={{ fontSize: 11, color: MUTED, marginBottom: 20 }}>This helps us write emails that sound like you.</div>
+        <div style={{ fontSize: 11, color: MUTED, marginBottom: 20 }}>This helps us write emails that sound like you, {userName}.</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {current.options.map(opt => (
             <button key={opt} onClick={() => select(opt)} style={{ padding: "11px 14px", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#e8e8e8", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "border-color 0.2s" }}
@@ -202,6 +203,10 @@ function StyleOnboarding({ onComplete }: { onComplete: (profile: StyleProfile) =
 }
 
 export default function EngineAgent() {
+  const { user, isLoaded } = useUser();
+  const firstName = user?.firstName || user?.username || "Rep";
+  const styleKey = user ? `engine-style-${user.id}` : null;
+
   const [orgName, setOrgName] = useState("");
   const [orgType, setOrgType] = useState("");
   const [orgContext, setOrgContext] = useState("");
@@ -220,6 +225,23 @@ export default function EngineAgent() {
     { label: "Draft\nEmails", state: "" },
     { label: "Review\n& Send", state: "" },
   ]);
+
+  // Load this rep's saved style profile from localStorage on login
+  useEffect(() => {
+    if (styleKey) {
+      try {
+        const saved = localStorage.getItem(styleKey);
+        if (saved) setStyleProfile(JSON.parse(saved));
+      } catch { /* ignore */ }
+    }
+  }, [styleKey]);
+
+  const saveStyleProfile = (profile: StyleProfile) => {
+    setStyleProfile(profile);
+    if (styleKey) {
+      try { localStorage.setItem(styleKey, JSON.stringify(profile)); } catch { /* ignore */ }
+    }
+  };
 
   const addLog = useCallback((msg: string, cls = "") => setLogs(prev => [...prev, { msg, cls }]), []);
   const setStep = useCallback((idx: number, state: string) =>
@@ -240,7 +262,7 @@ export default function EngineAgent() {
   };
 
   const handleStyleComplete = (profile: StyleProfile) => {
-    setStyleProfile(profile);
+    saveStyleProfile(profile);
     setShowOnboarding(false);
     runWorkflow(profile);
   };
@@ -318,17 +340,17 @@ Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","compan
       const newDrafts: Draft[] = [];
 
       const styleInstructions = activeProfile ? `
-Writing style instructions for this rep:
+Writing style instructions for ${firstName}:
 - Tone: ${activeProfile.tone}
 - Length preference: ${activeProfile.length}
 - Sign-off style: ${activeProfile.signoff}
 - Lead with: ${activeProfile.focus}
-Match this style closely.` : "";
+Match this style closely. The email should sound like it was personally written by ${firstName}.` : "";
 
       for (const contact of enriched) {
         const draftRaw = await callClaude([{
           role: "user",
-          content: `You are a business development rep at Engine.com — a B2B travel platform for group travel (conferences, events, student trips).
+          content: `You are ${firstName}, a business development rep at Engine.com — a B2B travel platform for group travel (conferences, events, student trips).
 
 Write a short outreach email to:
 Name: ${contact.name}
@@ -342,6 +364,7 @@ Rules:
 - Pitch Engine.com (group booking, cost savings, dedicated support)
 - End with ask for a 15-min call
 - Do NOT make it sound like a template
+- Sign off as ${firstName}
 
 Return ONLY valid JSON:
 {"subject":"subject line","body":"email body"}`
@@ -351,7 +374,7 @@ Return ONLY valid JSON:
         newDrafts.push({
           to: contact.name, email: contact.email,
           subject: dp?.subject || `Partnership Opportunity — Engine.com × ${orgName}`,
-          body: dp?.body || `Hi ${contact.name.split(" ")[0]},\n\nWanted to reach out about Engine.com and ${contact.company}. We simplify group travel for events — saving time and money.\n\nWould love a quick 15-min call.\n\n${activeProfile?.signoff || "Best,\nDarren"}`,
+          body: dp?.body || `Hi ${contact.name.split(" ")[0]},\n\nWanted to reach out about Engine.com and ${contact.company}. We simplify group travel for events — saving time and money.\n\nWould love a quick 15-min call.\n\n${activeProfile?.signoff || `Best,\n${firstName}`}`,
           sentAt: null,
         });
         addLog("Draft ready for " + contact.name, "ok");
@@ -383,10 +406,18 @@ Return ONLY valid JSON:
     }
   };
 
+  if (!isLoaded) {
+    return (
+      <div style={{ background: BG, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ color: MUTED, fontSize: 12, letterSpacing: "0.1em" }}>LOADING…</div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ fontFamily: "'IBM Plex Sans', monospace", background: BG, color: "#e8e8e8", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
-      {showOnboarding && <StyleOnboarding onComplete={handleStyleComplete} />}
+      {showOnboarding && <StyleOnboarding userName={firstName} onComplete={handleStyleComplete} />}
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px", borderBottom: `1px solid ${BORDER}`, background: SURFACE }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -396,7 +427,7 @@ Return ONLY valid JSON:
             <div style={{ fontSize: 9, color: MUTED, letterSpacing: "0.14em", textTransform: "uppercase", marginTop: 2 }}>Partnership Prospecting AI</div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {styleProfile && (
             <button onClick={() => setShowOnboarding(true)} style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: 4, padding: "4px 10px", color: MUTED, fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.1em", textTransform: "uppercase" }}>
               ✎ My Style
@@ -410,6 +441,11 @@ Return ONLY valid JSON:
               </button>
             ))}
           </nav>
+          {/* Rep avatar + sign out via Clerk */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10, color: MUTED }}>{firstName}</span>
+            <UserButton afterSignOutUrl="/sign-in" />
+          </div>
         </div>
       </header>
 
