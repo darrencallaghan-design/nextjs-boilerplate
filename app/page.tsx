@@ -609,7 +609,6 @@ RULES:
 - Para 1: "I'm with Engine, a hotel booking platform for [type of org]." Add cross-reference here if applicable.
 - Para 2: The value — specific to this person's role and org, using research where available. Length should match the substance: short if context is thin, longer if there's real detail to work with.
 - Para 3: Simple ask. "Open to X minutes?" or a soft question. No "Best regards" or formal sign-off needed.
-- Subject line: short, professional, understated. Under 7 words. Should feel like it came from a person, not a sales tool. Never mention "rates", "savings", "discount", or "opportunity" — those read as spam. Never use the org name in lowercase. Good examples: "A thought on [Org Name]", "Hotel program for [Org Name]", "Quick intro re: [Org Name] events", "Idea for [Org Name] conferences", "[Org Name] + Engine". Bad examples: "Hotel rates for deca", "Partnership Opportunity", "Quick question"
 - No em dashes (— or –). Use commas or plain sentence breaks instead.
 - No "I hope this finds you well", no "I wanted to reach out", no "I'm reaching out because"
 - Never write "Engine.com"
@@ -623,11 +622,44 @@ SUBJECT: [subject line]
 
         const dp = parseDraft(draftRaw);
         const firstName = contact.name.split(" ")[0];
+        const emailBody = dp?.body || `Hi ${firstName},\n\nI'm with Engine, a hotel booking platform for ${orgType.toLowerCase()}s. ${roleAngle}.\n\nOpen to 15 minutes to explore the fit?\n\nBest,\n${activeProfile?.repName || ""}`;
+
+        // Generate subject line in a dedicated call so it gets full attention
+        let subject = stripEmDashes(dp?.subject || "");
+        try {
+          const subjectRaw = await callClaude([{
+            role: "user",
+            content: `Write a cold email subject line for this outreach email.
+
+The email:
+---
+${emailBody}
+---
+
+Contact: ${contact.name}, ${contact.title} at ${contact.company}
+
+Rules for the subject line:
+- 4-7 words maximum
+- Professional and understated — sounds like it came from a person, not a sales tool
+- Never mention "rates", "savings", "discount", "opportunity", or "partnership"
+- Never use the org name in all lowercase (capitalize it properly: "${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}")
+- No em dashes, no exclamation marks
+- Should make the recipient curious enough to open, without sounding like spam
+- Good examples: "A thought on ${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}", "Hotel program for ${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}", "Quick intro re: ${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")} events", "${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")} + Engine"
+- Bad examples: "Hotel rates for ${orgName}", "Partnership Opportunity", "Quick question", "Following up"
+
+Reply with ONLY the subject line. No punctuation at the end. No quotes.`
+          }]);
+          subject = stripEmDashes(subjectRaw.trim().replace(/^["']|["']$/g, ""));
+        } catch {
+          subject = subject || `A thought on ${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}`;
+        }
+
         newDrafts.push({
           to: contact.name,
           email: contact.email,
-          subject: stripEmDashes(dp?.subject || `A thought on ${orgName}`),
-          body: dp?.body || `Hi ${firstName},\n\nI'm with Engine, a hotel booking platform for ${orgType.toLowerCase()}s. ${roleAngle}.\n\nOpen to 15 minutes to explore the fit?\n\nBest,\n${activeProfile?.repName || ""}`,
+          subject,
+          body: emailBody,
           sentAt: null,
           research,
         });
