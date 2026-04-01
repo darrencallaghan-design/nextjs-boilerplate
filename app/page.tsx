@@ -567,8 +567,11 @@ ${research}` : ""}
 
 ${crossContactNote}
 
+ROLE LENS — this shapes your angle:
+${contact.name} is a ${contact.title}. Before writing, ask: what does someone in this role actually care about day-to-day, and which part of Engine's value is most relevant to their specific pain or goal? A membership lead cares about member value and non-dues revenue. An events or conference person cares about reducing hotel logistics headaches. A CEO or ED cares about org-wide efficiency and new revenue streams. A development director cares about sustainable non-dues income. Don't use the same pitch for all three contacts at this org — each email should lead with the angle that makes the most sense for this person's specific function.
+
 WHAT TO WRITE:
-Based on the research, identify the strongest partnership angle for this org and contact. Is the hook their events? Their member base? Their existing benefits program? Their travel volume? Lead with the one angle that is most natural and specific to them — don't list everything Engine does.
+Based on the research and this person's role, identify the single strongest hook. Is it their events workload, their member travel, a revenue gap, a logistics pain? Lead with the one angle most relevant to ${contact.name} specifically — don't list everything Engine does.
 
 WORKING EXAMPLE (match this tone and structure):
 "Hi Carley,
