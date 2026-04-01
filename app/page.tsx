@@ -59,6 +59,52 @@ interface StyleProfile {
   editExamples: string[]; // saved edits to learn from
 }
 
+// Returns role-specific pain point and Engine angle based on job title
+function getRoleAngle(title: string): { painPoint: string; angle: string } {
+  const t = title.toLowerCase();
+  if (t.includes("executive director") || t.includes("ceo") || t.includes("president")) {
+    return {
+      painPoint: "managing travel budget across multiple events and ensuring the org isn't overpaying vendors",
+      angle: "Engine gives executive leadership full visibility into travel spend across all events, with group rates that typically save 15-20% vs. booking direct — freeing up budget for programs",
+    };
+  }
+  if (t.includes("finance") || t.includes("development") || t.includes("development director")) {
+    return {
+      painPoint: "tracking and reporting on travel spend across events without a centralized system",
+      angle: "Engine provides finance-ready reporting and centralized billing so every trip is accounted for, making budget reconciliation and grant reporting straightforward",
+    };
+  }
+  if (t.includes("programs") || t.includes("vp of programs") || t.includes("director of programs")) {
+    return {
+      painPoint: "coordinating travel logistics for multiple programs and events without overwhelming their team",
+      angle: "Engine handles all the logistics — group booking, changes, support — so the programs team can focus on the event itself, not spreadsheets and airline hold times",
+    };
+  }
+  if (t.includes("events") || t.includes("conference") || t.includes("coordinator")) {
+    return {
+      painPoint: "managing last-minute changes, group blocks, and vendor coordination across multiple events simultaneously",
+      angle: "Engine gives events teams one platform to manage group blocks, handle changes in real time, and get dedicated support during the event — no more chasing airlines individually",
+    };
+  }
+  if (t.includes("membership") || t.includes("vp of membership")) {
+    return {
+      painPoint: "providing members with a high-quality travel experience without the logistical lift of managing it in-house",
+      angle: "Engine helps membership orgs offer a seamless, professional travel experience for members attending conferences and events — a tangible benefit that drives retention",
+    };
+  }
+  if (t.includes("operations") || t.includes("director of operations")) {
+    return {
+      painPoint: "streamlining the operational complexity of moving large groups across multiple events each year",
+      angle: "Engine centralizes group travel ops — one portal, one contact, one invoice — reducing the manual work that usually falls on operations staff",
+    };
+  }
+  // Default
+  return {
+    painPoint: "coordinating group travel across conferences, competitions, and chapter events",
+    angle: "Engine simplifies group booking, cuts costs by 15-20%, and gives the team dedicated travel support so nothing falls through the cracks",
+  };
+}
+
 function fallbackContacts(orgName: string, orgType: string): Contact[] {
   const roles = ROLES[orgType] || ROLES["Professional Association"];
   const names = ["Sarah Mitchell", "James Thornton", "Ana Rivera"];
@@ -515,6 +561,9 @@ Your job: write the new email so that if ${activeProfile.repName} read it, they'
         const contact = enriched[ci];
         const research = contactResearch[ci] || "";
 
+        // Role-specific angle for this contact's title
+        const roleAngle = getRoleAngle(contact.title);
+
         // Cross-contact context: note colleagues already contacted at this org
         const alreadyContacted = enriched.slice(0, ci);
         const crossContactNote = alreadyContacted.length > 0
@@ -534,23 +583,29 @@ CONTACT:
 ${orgContext ? `- Context: ${orgContext}` : ""}
 ${crossContactNote}
 
-ABOUT ENGINE.COM (what you're pitching):
-Engine.com is a B2B group travel platform for organizations that book travel for conferences, competitions, national events, and chapter trips. Key value: one booking portal instead of juggling airlines and hotels separately, group rates that save 15-20% vs. booking direct, dedicated travel support, and finance-ready reporting. The ask is a 15-min call or a quick reply.
+ROLE-SPECIFIC ANGLE FOR THIS CONTACT:
+As a ${contact.title}, their most likely pain point is: ${roleAngle.painPoint}
+The Engine angle that will resonate most with them: ${roleAngle.angle}
+Lead with this angle. Don't pitch everything — just the one thing that matters most to someone in this role.
 
-${research ? `RESEARCH — real details about this org (weave at least one specific fact naturally into the email):
-${research}` : `CONTEXT: This is a ${orgType}. Consider what travel programs they run — national conferences, regional competitions, chapter trips — and what a ${contact.title} would genuinely worry about (budget, logistics complexity, last-minute changes, coordinating across chapters/advisors).`}
+ABOUT ENGINE (what you're pitching):
+Engine is a B2B group travel platform for organizations that manage travel to conferences, competitions, national events, and chapter trips. Refer to the company as "Engine" — not "Engine.com". Key value: one booking portal, group rates that save 15-20% vs. booking direct, dedicated travel support, and finance-ready reporting. The ask is a 15-min call or a quick reply.
+
+${research ? `RESEARCH — real details found about this org (weave at least one specific fact naturally into the email):
+${research}` : `CONTEXT: This is a ${orgType}. Consider what travel programs they run — national conferences, regional competitions, chapter trips.`}
 
 WHAT MAKES AN EMAIL LAND VS. GET DELETED:
-❌ Deleted immediately: "Hi Sarah, I hope you're doing well. I wanted to reach out about Engine.com. We help organizations save money on group travel. Would you have 15 minutes?"
-✅ Gets a reply: "Hi Sarah — moving thousands of DECA students to Nationals across 50 states is a logistical lift. Engine gives chapter advisors one portal to book everything, and most orgs we work with save 15-20% on group rates vs. going direct. Worth a quick chat before you lock in travel vendors this year?"
+❌ Deleted: "Hi Sarah, I hope you're doing well. I wanted to reach out about Engine. We help organizations save money on group travel. Would you have 15 minutes?"
+✅ Gets a reply: "Hi Sarah — moving thousands of DECA students to Nationals across 50 states is a real logistical lift for a programs team. Engine handles the group booking and last-minute changes so your team isn't on hold with airlines the week of the event. Most orgs save 15-20% on group rates too. Worth a quick 15 minutes before you lock in vendors for this year?"
 
 REQUIREMENTS:
-- First line must hook them with something specific — their org, their event, their role's challenge
+- First line hooks them with something specific to their org, their event, or their role's challenge
 - No "I hope this finds you well", no "I wanted to reach out", no "I'm reaching out because"
-- Mention one real pain point and one concrete Engine.com benefit
+- Lead with the role-specific angle above — don't pitch generic travel savings to an events coordinator, don't pitch logistics to a finance director
 - End with one soft, specific ask (15-min call or a simple question)
-- 3 paragraphs, 150-220 words total in the body
+- 3 short paragraphs, 150-220 words total in the body
 - Must sound like ${activeProfile?.repName || "the rep"} based on the writing sample above — not like AI
+- Refer to the company as "Engine" only — never "Engine.com"
 
 Write the email in this exact format (no JSON, no markdown, just this):
 SUBJECT: [subject line]
@@ -564,7 +619,7 @@ SUBJECT: [subject line]
           to: contact.name,
           email: contact.email,
           subject: dp?.subject || `Group Travel for ${orgName} — Engine.com`,
-          body: dp?.body || `Hi ${firstName},\n\nCoordinating group travel for ${contact.company} is no small task — Engine.com helps ${orgType.toLowerCase()}s like yours simplify booking, cut costs by 15-20%, and give your team one portal instead of juggling airlines and hotels.\n\nWould it make sense to connect for 15 minutes before your next event?\n\nBest,\n${activeProfile?.repName || ""}`,
+          body: dp?.body || `Hi ${firstName},\n\nCoordinating group travel for ${contact.company} is no small task — Engine helps ${orgType.toLowerCase()}s like yours simplify booking, cut costs by 15-20%, and give your team one portal instead of juggling airlines and hotels.\n\nWould it make sense to connect for 15 minutes before your next event?\n\nBest,\n${activeProfile?.repName || ""}`,
           sentAt: null,
           research,
         });
