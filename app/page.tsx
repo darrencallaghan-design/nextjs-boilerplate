@@ -59,50 +59,32 @@ interface StyleProfile {
   editExamples: string[]; // saved edits to learn from
 }
 
-// Returns role-specific pain point and Engine angle based on job title
-function getRoleAngle(title: string): { painPoint: string; angle: string } {
+// Returns role-specific framing for why Engine matters to this person
+function getRoleAngle(title: string): string {
   const t = title.toLowerCase();
-  if (t.includes("executive director") || t.includes("ceo") || t.includes("president")) {
-    return {
-      painPoint: "managing travel budget across multiple events and ensuring the org isn't overpaying vendors",
-      angle: "Engine gives executive leadership full visibility into travel spend across all events, with group rates that typically save 15-20% vs. booking direct — freeing up budget for programs",
-    };
+  if (t.includes("executive director") || t.includes("ceo") || t.includes("president") || t.includes("executive")) {
+    return "given your leadership role, Engine can serve as both an operational tool for your events and a value-add partnership — offering preferred hotel rates for members, referral revenue for the organization, and a cleaner booking experience across the board";
   }
-  if (t.includes("finance") || t.includes("development") || t.includes("development director")) {
-    return {
-      painPoint: "tracking and reporting on travel spend across events without a centralized system",
-      angle: "Engine provides finance-ready reporting and centralized billing so every trip is accounted for, making budget reconciliation and grant reporting straightforward",
-    };
+  if (t.includes("development") || t.includes("fundrais")) {
+    return "given your development focus, Engine can be a meaningful non-dues revenue stream — we pay referral fees when members book through the platform, while also giving the org preferred hotel rates for its own events";
   }
-  if (t.includes("programs") || t.includes("vp of programs") || t.includes("director of programs")) {
-    return {
-      painPoint: "coordinating travel logistics for multiple programs and events without overwhelming their team",
-      angle: "Engine handles all the logistics — group booking, changes, support — so the programs team can focus on the event itself, not spreadsheets and airline hold times",
-    };
+  if (t.includes("finance") || t.includes("treasurer") || t.includes("controller") || t.includes("cfo")) {
+    return "given your finance focus, Engine gives you full visibility into hotel spend across all events — centralized billing, preferred rates, and clean reporting rather than chasing receipts from multiple hotel contracts";
   }
-  if (t.includes("events") || t.includes("conference") || t.includes("coordinator")) {
-    return {
-      painPoint: "managing last-minute changes, group blocks, and vendor coordination across multiple events simultaneously",
-      angle: "Engine gives events teams one platform to manage group blocks, handle changes in real time, and get dedicated support during the event — no more chasing airlines individually",
-    };
+  if (t.includes("programs") || t.includes("vp of programs")) {
+    return "given your programs focus, Engine handles the hotel logistics for your events — group room blocks, rooming lists, rate negotiations — so your team isn't managing that manually on top of everything else";
+  }
+  if (t.includes("events") || t.includes("conference") || t.includes("coordinator") || t.includes("meetings")) {
+    return "given your events focus, Engine manages the group hotel block from contract to checkout — room blocks, attrition risk, rooming lists, and on-site support — so you're not juggling that alongside everything else an event requires";
   }
   if (t.includes("membership") || t.includes("vp of membership")) {
-    return {
-      painPoint: "providing members with a high-quality travel experience without the logistical lift of managing it in-house",
-      angle: "Engine helps membership orgs offer a seamless, professional travel experience for members attending conferences and events — a tangible benefit that drives retention",
-    };
+    return "given your membership focus, Engine can be a tangible member benefit — preferred hotel rates for members traveling to your events and conferences, with referral revenue coming back to the organization";
   }
-  if (t.includes("operations") || t.includes("director of operations")) {
-    return {
-      painPoint: "streamlining the operational complexity of moving large groups across multiple events each year",
-      angle: "Engine centralizes group travel ops — one portal, one contact, one invoice — reducing the manual work that usually falls on operations staff",
-    };
+  if (t.includes("operations") || t.includes("director of operations") || t.includes("chief operating")) {
+    return "given your operations focus, Engine centralizes all group hotel booking into one platform — one contract, one contact, one invoice across all your events — replacing the patchwork of individual hotel negotiations";
   }
   // Default
-  return {
-    painPoint: "coordinating group travel across conferences, competitions, and chapter events",
-    angle: "Engine simplifies group booking, cuts costs by 15-20%, and gives the team dedicated travel support so nothing falls through the cracks",
-  };
+  return "Engine can serve as both an operational tool for your events and a member benefit — preferred hotel rates, referral revenue back to the org, and a cleaner booking experience overall";
 }
 
 function fallbackContacts(orgName: string, orgType: string): Contact[] {
@@ -561,7 +543,7 @@ Your job: write the new email so that if ${activeProfile.repName} read it, they'
         const contact = enriched[ci];
         const research = contactResearch[ci] || "";
 
-        // Role-specific angle for this contact's title
+        // Role-specific framing for this contact
         const roleAngle = getRoleAngle(contact.title);
 
         // Cross-contact context: note colleagues already contacted at this org
@@ -574,43 +556,42 @@ Your job: write the new email so that if ${activeProfile.repName} read it, they'
           role: "user",
           content: `${styleContext}
 
-Now write a cold outreach email to this person on behalf of ${activeProfile?.repName || "the rep"}:
+Write a short cold outreach email from ${activeProfile?.repName || "the rep"} to:
 
-CONTACT:
-- Name: ${contact.name}
-- Title: ${contact.title}
-- Organization: ${contact.company} (${orgType})
-${orgContext ? `- Context: ${orgContext}` : ""}
-${crossContactNote}
+Name: ${contact.name}
+Title: ${contact.title}
+Org: ${contact.company} (${orgType})
+${orgContext ? `Context: ${orgContext}` : ""}
 
-ROLE-SPECIFIC ANGLE FOR THIS CONTACT:
-As a ${contact.title}, their most likely pain point is: ${roleAngle.painPoint}
-The Engine angle that will resonate most with them: ${roleAngle.angle}
-Lead with this angle. Don't pitch everything — just the one thing that matters most to someone in this role.
+ENGINE (what you're pitching):
+Engine is a group hotel booking platform for membership organizations and associations. It helps orgs get preferred hotel rates for their events, gives members access to those rates, and generates referral revenue for the organization. Never say "Engine.com" — always just "Engine". Never mention airlines — Engine is hotels only.
 
-ABOUT ENGINE (what you're pitching):
-Engine is a B2B group travel platform for organizations that manage travel to conferences, competitions, national events, and chapter trips. Refer to the company as "Engine" — not "Engine.com". Key value: one booking portal, group rates that save 15-20% vs. booking direct, dedicated travel support, and finance-ready reporting. The ask is a 15-min call or a quick reply.
+ROLE ANGLE — use this exact framing for why Engine matters to THIS person:
+${roleAngle}
 
-${research ? `RESEARCH — real details found about this org (weave at least one specific fact naturally into the email):
-${research}` : `CONTEXT: This is a ${orgType}. Consider what travel programs they run — national conferences, regional competitions, chapter trips.`}
+${alreadyContacted.length > 0 ? `CROSS-REFERENCE — you already contacted ${alreadyContacted.map(c => c.name).join(" and ")} at this org today. Open the email by mentioning that, then explain why you're also reaching out to ${contact.name} specifically given their role. Example: "I also reached out to ${alreadyContacted[0].name} today, but wanted to connect with you given your [role focus]."` : ""}
 
-WHAT MAKES AN EMAIL LAND VS. GET DELETED:
-❌ Deleted: "Hi Sarah, I hope you're doing well. I wanted to reach out about Engine. We help organizations save money on group travel. Would you have 15 minutes?"
-✅ Gets a reply: "Hi Sarah — moving thousands of DECA students to Nationals across 50 states is a real logistical lift for a programs team. Engine handles the group booking and last-minute changes so your team isn't on hold with airlines the week of the event. Most orgs save 15-20% on group rates too. Worth a quick 15 minutes before you lock in vendors for this year?"
+${research ? `RESEARCH (use at least one specific detail from this to make the email feel informed):
+${research}` : ""}
 
-REQUIREMENTS:
-- First line hooks them with something specific to their org, their event, or their role's challenge
-- No "I hope this finds you well", no "I wanted to reach out", no "I'm reaching out because"
-- Lead with the role-specific angle above — don't pitch generic travel savings to an events coordinator, don't pitch logistics to a finance director
-- End with one soft, specific ask (15-min call or a simple question)
-- 3 short paragraphs, 150-220 words total in the body
-- Must sound like ${activeProfile?.repName || "the rep"} based on the writing sample above — not like AI
-- Refer to the company as "Engine" only — never "Engine.com"
+THIS IS THE EXACT STYLE AND FORMAT TO FOLLOW — model your email on this working example:
+"Hi Carley,
+I'm with Engine, a group hotel booking platform for membership organizations. I also reached out to Stephanie Abisi today, but wanted to connect with you, given your development focus.
+Engine can serve as both an operational tool for Legion events and a value-add partnership, offering preferred hotel rates for members, referral revenue for the organization, and a cleaner booking experience across the board.
+Open to 20 minutes to explore the fit?"
 
-Write the email in this exact format (no JSON, no markdown, just this):
+RULES:
+- Para 1: Introduce Engine as "a group hotel booking platform for [org type]." + cross-reference if applicable
+- Para 2: The role-specific value — make this as long as it needs to be. If you have specific research about this org, use it here to explain concretely how Engine fits their situation. If the role has nuance (e.g. a development director cares about both revenue AND operations), address both. Don't pad, but don't cut substance either.
+- Para 3: Simple ask — "Open to X minutes to explore the fit?" or similar
+- Length: use judgment. A short email (like the example) is right when context is thin. A longer one (150-200 words) is right when you have real research or the role warrants more explanation. Never add filler — only add length if it adds value.
+- No fluff, no "I hope this finds you well", no generic opener
+- Sound like ${activeProfile?.repName || "the rep"} based on the writing sample — keep it human
+
+Write the email in this exact format:
 SUBJECT: [subject line]
 
-[full email body]`
+[email body]`
         }]);
 
         const dp = parseDraft(draftRaw);
@@ -619,7 +600,7 @@ SUBJECT: [subject line]
           to: contact.name,
           email: contact.email,
           subject: dp?.subject || `Group Travel for ${orgName} — Engine.com`,
-          body: dp?.body || `Hi ${firstName},\n\nCoordinating group travel for ${contact.company} is no small task — Engine helps ${orgType.toLowerCase()}s like yours simplify booking, cut costs by 15-20%, and give your team one portal instead of juggling airlines and hotels.\n\nWould it make sense to connect for 15 minutes before your next event?\n\nBest,\n${activeProfile?.repName || ""}`,
+          body: dp?.body || `Hi ${firstName},\n\nI'm with Engine, a group hotel booking platform for ${orgType.toLowerCase()}s. ${roleAngle}.\n\nOpen to 15 minutes to explore the fit?\n\nBest,\n${activeProfile?.repName || ""}`,
           sentAt: null,
           research,
         });
