@@ -73,6 +73,31 @@ function parseJSON(raw: string) {
   try { return JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { return null; }
 }
 
+// Parses an email written in plain text format: SUBJECT: ...\n\n[body]
+// Falls back to JSON parsing for backwards compatibility.
+function parseDraft(raw: string): { subject: string; body: string } | null {
+  // Try JSON first
+  const json = parseJSON(raw);
+  if (json?.subject && json?.body) return { subject: json.subject, body: json.body };
+
+  // Try plain text: look for SUBJECT: line
+  const subjectMatch = raw.match(/^SUBJECT:\s*(.+)$/im);
+  if (subjectMatch) {
+    const subject = subjectMatch[1].trim();
+    // Body is everything after the subject line and following blank lines
+    const body = raw.replace(/^SUBJECT:\s*.+\n*/im, "").trim();
+    if (subject && body) return { subject, body };
+  }
+
+  // Last resort: treat first line as subject, rest as body
+  const lines = raw.trim().split("\n");
+  if (lines.length >= 3) {
+    return { subject: lines[0].replace(/^subject:\s*/i, "").trim(), body: lines.slice(1).join("\n").trim() };
+  }
+
+  return null;
+}
+
 async function callClaude(messages: { role: string; content: string }[]) {
   const res = await fetch("/api/claude", {
     method: "POST",
@@ -471,15 +496,20 @@ Identify: what events/travel programs they run, a specific pain point for a ${rc
       const newDrafts: Draft[] = [];
 
       const styleContext = activeProfile ? `
-You are writing on behalf of ${activeProfile.repName}, a business development rep at Engine.com.
+You are ghostwriting a cold outreach email for ${activeProfile.repName}, a business development rep at Engine.com. The email must sound exactly like them — not like AI, not like a template.
 
-${activeProfile.repName}'s writing style (extracted from their own emails):
-${activeProfile.extractedStyle}
+Here is a real email ${activeProfile.repName} has written. Study the voice, sentence rhythm, length, how they open, how they close, their level of formality, and any signature phrases:
 
-${activeProfile.editExamples.length > 0 ? `Examples of how ${activeProfile.repName} edits AI drafts (learn from these):
+--- START OF ${activeProfile.repName.toUpperCase()}'S REAL EMAIL ---
+${activeProfile.writingSample}
+--- END OF REAL EMAIL ---
+
+Style analysis: ${activeProfile.extractedStyle}
+
+${activeProfile.editExamples.length > 0 ? `They have also corrected AI drafts. Here is what they changed and how — match this direction:
 ${activeProfile.editExamples.slice(-3).join("\n---\n")}` : ""}
 
-Write the email to sound EXACTLY like ${activeProfile.repName}. Match their tone, length, structure, and sign-off precisely.` : "";
+Your job: write the new email so that if ${activeProfile.repName} read it, they'd think "yes, this sounds like me." Copy their rhythm, not their words.` : `You are writing a cold outreach email for a business development rep at Engine.com.`;
 
       for (let ci = 0; ci < enriched.length; ci++) {
         const contact = enriched[ci];
@@ -495,43 +525,46 @@ Write the email to sound EXACTLY like ${activeProfile.repName}. Match their tone
           role: "user",
           content: `${styleContext}
 
-Write a personalized cold outreach email for Engine.com to the contact below. Engine.com is a B2B group travel platform — we help organizations manage group bookings for conferences, competitions, national events, and chapter trips. Key benefits: simplified booking, cost savings (typically 15-20% vs. booking direct), dedicated travel support, and finance-ready reporting.
+Now write a cold outreach email to this person on behalf of ${activeProfile?.repName || "the rep"}:
 
 CONTACT:
-Name: ${contact.name}
-Title: ${contact.title}
-Organization: ${contact.company} (${orgType})
-${orgContext ? `Context: ${orgContext}` : ""}
+- Name: ${contact.name}
+- Title: ${contact.title}
+- Organization: ${contact.company} (${orgType})
+${orgContext ? `- Context: ${orgContext}` : ""}
 ${crossContactNote}
 
-${research ? `RESEARCH (real details found about this org — use at least one specific fact from here):
-${research}` : `WHAT TO KNOW: This is a ${orgType}. Think about what travel programs they likely run — national conferences, regional competitions, chapter trips — and what a ${contact.title} would care about most (budget control, logistics complexity, vendor coordination, etc.).`}
+ABOUT ENGINE.COM (what you're pitching):
+Engine.com is a B2B group travel platform for organizations that book travel for conferences, competitions, national events, and chapter trips. Key value: one booking portal instead of juggling airlines and hotels separately, group rates that save 15-20% vs. booking direct, dedicated travel support, and finance-ready reporting. The ask is a 15-min call or a quick reply.
 
-WHAT A GREAT EMAIL LOOKS LIKE:
-❌ Generic (avoid this):
-"Hi Sarah, I hope you're doing well. I wanted to reach out about Engine.com. We're a travel platform that helps organizations save money on group travel. Would you have time for a 15-minute call?"
+${research ? `RESEARCH — real details about this org (weave at least one specific fact naturally into the email):
+${research}` : `CONTEXT: This is a ${orgType}. Consider what travel programs they run — national conferences, regional competitions, chapter trips — and what a ${contact.title} would genuinely worry about (budget, logistics complexity, last-minute changes, coordinating across chapters/advisors).`}
 
-✅ Specific and tailored (aim for this):
-"Hi Sarah — coordinating travel for DECA's national conference is no small task, especially when you're moving thousands of students across 50 states. Engine handles exactly that kind of volume for student orgs, giving chapter advisors one booking portal instead of juggling 10 airline sites. Most orgs we work with save 15-20% on group rates. Would it make sense to connect before you finalize travel vendors for this year's event?"
+WHAT MAKES AN EMAIL LAND VS. GET DELETED:
+❌ Deleted immediately: "Hi Sarah, I hope you're doing well. I wanted to reach out about Engine.com. We help organizations save money on group travel. Would you have 15 minutes?"
+✅ Gets a reply: "Hi Sarah — moving thousands of DECA students to Nationals across 50 states is a logistical lift. Engine gives chapter advisors one portal to book everything, and most orgs we work with save 15-20% on group rates vs. going direct. Worth a quick chat before you lock in travel vendors this year?"
 
-RULES FOR THIS EMAIL:
-- Open with something specific to their org or role — never "I hope this finds you well" or "I wanted to reach out"
-- Name a real pain point they'd actually feel (logistics complexity, cost overruns, last-minute changes, finance reporting)
-- Mention one concrete Engine.com benefit that maps to that pain point
-- End with a soft, specific ask — a 15-min call or a simple reply question
-- Length: 3 short paragraphs, roughly 150-220 words in the body
-- Tone and structure must match the rep's style described above
+REQUIREMENTS:
+- First line must hook them with something specific — their org, their event, their role's challenge
+- No "I hope this finds you well", no "I wanted to reach out", no "I'm reaching out because"
+- Mention one real pain point and one concrete Engine.com benefit
+- End with one soft, specific ask (15-min call or a simple question)
+- 3 paragraphs, 150-220 words total in the body
+- Must sound like ${activeProfile?.repName || "the rep"} based on the writing sample above — not like AI
 
-Return ONLY valid JSON with no extra text:
-{"subject":"subject line here","body":"full email body here"}`
+Write the email in this exact format (no JSON, no markdown, just this):
+SUBJECT: [subject line]
+
+[full email body]`
         }]);
 
-        const dp = parseJSON(draftRaw);
+        const dp = parseDraft(draftRaw);
+        const firstName = contact.name.split(" ")[0];
         newDrafts.push({
           to: contact.name,
           email: contact.email,
-          subject: dp?.subject || `Partnership Opportunity — Engine.com × ${orgName}`,
-          body: dp?.body || `Hi ${contact.name.split(" ")[0]},\n\nWanted to reach out about Engine.com and ${contact.company}.\n\nBest,\n${activeProfile?.repName || ""}`,
+          subject: dp?.subject || `Group Travel for ${orgName} — Engine.com`,
+          body: dp?.body || `Hi ${firstName},\n\nCoordinating group travel for ${contact.company} is no small task — Engine.com helps ${orgType.toLowerCase()}s like yours simplify booking, cut costs by 15-20%, and give your team one portal instead of juggling airlines and hotels.\n\nWould it make sense to connect for 15 minutes before your next event?\n\nBest,\n${activeProfile?.repName || ""}`,
           sentAt: null,
           research,
         });
