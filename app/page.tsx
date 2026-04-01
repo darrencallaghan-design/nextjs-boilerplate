@@ -541,9 +541,11 @@ Your job: write the new email so that if ${activeProfile.repName} read it, they'
           ? `CROSS-REFERENCE (mandatory): You already contacted ${alreadyContacted.map(c => `${c.name} (${c.title})`).join(" and ")} at ${orgName} today. In the first paragraph, state this directly: "I also reached out to ${alreadyContacted[0].name} today, but wanted to connect with you given your [their specific role focus]." Do not make this optional — always include it.`
           : "";
 
-        const draftRaw = await callClaude([{
-          role: "user",
-          content: `${styleContext}
+        let draftRaw = "";
+        try {
+          draftRaw = await callClaude([{
+            role: "user",
+            content: `${styleContext}
 
 Write a partnership outreach email from ${activeProfile?.repName || "the rep"} to:
 
@@ -576,7 +578,7 @@ Based on the research and this person's role, identify the single strongest hook
 WORKING EXAMPLE (match this tone and structure):
 "Hi Carley,
 I'm with Engine. I also reached out to Stephanie Abisi today, but wanted to connect with you given your development focus.
-Engine can serve as both an operational tool for Legion events and a value-add partnership — preferred hotel rates for members, referral revenue for the organization, and a cleaner booking experience across the board. Given how frequently Legion chapters host events and the member travel that comes with that, it feels like a natural fit.
+Engine can work as both an operational tool for Legion events and a member benefit, preferred hotel rates for members, referral revenue for the organization, and a cleaner booking experience across the board. Given how frequently Legion chapters host events and the member travel that comes with that, it feels like a natural fit.
 Open to 20 minutes to explore?"
 
 RULES:
@@ -594,7 +596,10 @@ Write the email in this exact format:
 SUBJECT: [subject line]
 
 [email body]`
-        }]);
+          }]);
+        } catch (draftErr) {
+          addLog(`Draft failed for ${contact.name}: ${(draftErr as Error).message}`, "err");
+        }
 
         const dp = parseDraft(draftRaw);
         const firstName = contact.name.split(" ")[0];

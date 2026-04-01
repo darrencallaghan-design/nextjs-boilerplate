@@ -20,11 +20,25 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify(body),
   });
 
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error("Anthropic API error", res.status, errBody);
+    return NextResponse.json(
+      { error: `Anthropic API error: ${res.status}`, detail: errBody },
+      { status: res.status }
+    );
+  }
+
   const data = await res.json();
   const text = (data?.content || [])
     .filter((b: { type: string }) => b?.type === "text")
     .map((b: { text: string }) => b.text)
     .join("\n");
+
+  if (!text) {
+    console.error("Anthropic API returned empty text", JSON.stringify(data));
+    return NextResponse.json({ error: "Empty response from API" }, { status: 502 });
+  }
 
   return NextResponse.json({ text });
 }
