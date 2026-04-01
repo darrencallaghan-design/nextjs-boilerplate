@@ -4,7 +4,7 @@ export async function POST(req: NextRequest) {
   const { orgName, orgType, orgContext } = await req.json();
 
   const body = {
-    model: "claude-sonnet-4-5",
+    model: "claude-sonnet-4-6",
     max_tokens: 1000,
     messages: [
       {
