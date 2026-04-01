@@ -428,27 +428,36 @@ Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","compan
       const contactResearch: string[] = [];
       for (let ri = 0; ri < enriched.length; ri++) {
         const rc = enriched[ri];
-        addLog(`Researching ${rc.name}…`, "info");
+        addLog(`Searching web for ${rc.name} at ${orgName}…`, "info");
         try {
-          const researchRaw = await callClaude([{
-            role: "user",
-            content: `You are helping a business development rep at Engine.com (a B2B group travel platform) prepare a personalized outreach email.
+          // Try live web search first
+          const webRes = await fetch("/api/research", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orgName, orgType, orgContext,
+              contactName: rc.name,
+              contactTitle: rc.title,
+            }),
+          });
+          let researchText = "";
+          if (webRes.ok) {
+            const webData = await webRes.json();
+            researchText = webData?.text || "";
+          }
+          // If web search returned nothing, fall back to knowledge-based research
+          if (!researchText.trim()) {
+            addLog(`Web search empty — using AI knowledge for ${rc.name}`, "info");
+            researchText = await callClaude([{
+              role: "user",
+              content: `Based on what you know, research ${orgName} (${orgType}) for a sales outreach email to ${rc.name}, ${rc.title}.
+${orgContext ? `Context: ${orgContext}` : ""}
 
-Research this organization and contact:
-- Organization: ${orgName} (${orgType})
-- Contact: ${rc.name}, ${rc.title}
-${orgContext ? `- Known context: ${orgContext}` : ""}
-
-Based on what you know about organizations like this, identify:
-1. What travel programs or events this org likely runs (conferences, competitions, national events, chapter trips, etc.)
-2. A specific, believable hook or pain point relevant to ${rc.title} at a ${orgType} — something concrete they'd actually care about (e.g. cost control, last-minute bookings, coordinating travel for 500 students across 30 chapters)
-3. Any recent trends or pressures this type of org faces around group travel
-4. One specific angle that would make this rep stand out vs. generic vendor outreach
-
-Be concrete and specific — no generic filler. 3-5 sentences total. These notes are for the email writer only, not for the email itself.`
-          }]);
-          contactResearch.push(researchRaw);
-          addLog(`✓ Research complete for ${rc.name}`, "ok");
+Identify: what events/travel programs they run, a specific pain point for a ${rc.title}, and one tailored angle for Engine.com (group travel platform). Be specific. 4-5 sentences. These are notes for the rep only.`,
+            }]);
+          }
+          contactResearch.push(researchText);
+          addLog(`✓ Research ready for ${rc.name}`, "ok");
         } catch {
           contactResearch.push("");
           addLog(`Research skipped for ${rc.name}`, "info");
