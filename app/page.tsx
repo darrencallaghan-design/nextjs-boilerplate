@@ -59,33 +59,6 @@ interface StyleProfile {
   editExamples: string[]; // saved edits to learn from
 }
 
-// Returns role-specific framing for why Engine matters to this person
-function getRoleAngle(title: string): string {
-  const t = title.toLowerCase();
-  if (t.includes("executive director") || t.includes("ceo") || t.includes("president") || t.includes("executive")) {
-    return "given your leadership role, Engine can serve as both an operational tool for your events and a value-add partnership — offering preferred hotel rates for members, referral revenue for the organization, and a cleaner booking experience across the board";
-  }
-  if (t.includes("development") || t.includes("fundrais")) {
-    return "given your development focus, Engine can be a meaningful non-dues revenue stream — we pay referral fees when members book through the platform, while also giving the org preferred hotel rates for its own events";
-  }
-  if (t.includes("finance") || t.includes("treasurer") || t.includes("controller") || t.includes("cfo")) {
-    return "given your finance focus, Engine gives you full visibility into hotel spend across all events — centralized billing, preferred rates, and clean reporting rather than chasing receipts from multiple hotel contracts";
-  }
-  if (t.includes("programs") || t.includes("vp of programs")) {
-    return "given your programs focus, Engine handles the hotel logistics for your events — group room blocks, rooming lists, rate negotiations — so your team isn't managing that manually on top of everything else";
-  }
-  if (t.includes("events") || t.includes("conference") || t.includes("coordinator") || t.includes("meetings")) {
-    return "given your events focus, Engine manages the group hotel block from contract to checkout — room blocks, attrition risk, rooming lists, and on-site support — so you're not juggling that alongside everything else an event requires";
-  }
-  if (t.includes("membership") || t.includes("vp of membership")) {
-    return "given your membership focus, Engine can be a tangible member benefit — preferred hotel rates for members traveling to your events and conferences, with referral revenue coming back to the organization";
-  }
-  if (t.includes("operations") || t.includes("director of operations") || t.includes("chief operating")) {
-    return "given your operations focus, Engine centralizes all group hotel booking into one platform — one contract, one contact, one invoice across all your events — replacing the patchwork of individual hotel negotiations";
-  }
-  // Default
-  return "Engine can serve as both an operational tool for your events and a member benefit — preferred hotel rates, referral revenue back to the org, and a cleaner booking experience overall";
-}
 
 function fallbackContacts(orgName: string, orgType: string): Contact[] {
   const roles = ROLES[orgType] || ROLES["Professional Association"];
@@ -488,59 +461,54 @@ Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","compan
       setContacts(enriched);
       setStep(1, "done");
 
-      // ── STEP 3: Research Each Contact ───────────────
+      // ── STEP 3: Research the Org (once, shared across all contacts) ──
       setStep(2, "active");
-      setStatus({ msg: `Researching ${orgName} and each contact…`, cls: "" });
-      addLog(`Researching ${orgName} to find personalization hooks`, "info");
+      setStatus({ msg: `Researching ${orgName} for partnership fit…`, cls: "" });
+      addLog(`Researching ${orgName}…`, "info");
 
-      const contactResearch: string[] = [];
-      for (let ri = 0; ri < enriched.length; ri++) {
-        const rc = enriched[ri];
-        addLog(`Searching web for ${rc.name} at ${orgName}…`, "info");
-        try {
-          // Try live web search first
-          const webRes = await fetch("/api/research", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              orgName, orgType, orgContext,
-              contactName: rc.name,
-              contactTitle: rc.title,
-            }),
-          });
-          let researchText = "";
-          if (webRes.ok) {
-            const webData = await webRes.json();
-            researchText = webData?.text || "";
-          }
-          // If web search returned nothing, fall back to knowledge-based research
-          if (!researchText.trim()) {
-            addLog(`Web search empty — using AI knowledge for ${rc.name}`, "info");
-            researchText = await callClaude([{
-              role: "user",
-              content: `Research ${orgName} (${orgType}) to help write a partnership outreach email to ${rc.name}, ${rc.title}.
-${orgContext ? `Context: ${orgContext}` : ""}
-
-Engine is a hotel booking platform. We are looking for partnership opportunities — not just selling hotel bookings, but finding orgs that can become ongoing partners where Engine becomes a value-add to their members or customers.
-
-Identify:
-1. What events, conferences, or travel programs does ${orgName} run? How often and at what scale?
-2. How does ${orgName} engage with its members or customers on an ongoing basis (not one-off)? What is their existing "motion" (newsletters, annual events, chapter meetings, benefits programs)?
-3. Does their membership or customer base have meaningful hotel travel volume tied to their work or participation?
-4. What would Engine mean specifically for a ${rc.title} — operational value, member benefit, or revenue opportunity?
-5. Any specific recent news, growth, or events that make this a timely outreach?
-
-Be specific. 4-6 sentences. These are internal notes for the rep writing the email.`,
-            }]);
-          }
-          contactResearch.push(researchText);
-          addLog(`✓ Research ready for ${rc.name}`, "ok");
-        } catch {
-          contactResearch.push("");
-          addLog(`Research skipped for ${rc.name}`, "info");
+      let orgResearch = "";
+      try {
+        // Try live web search first
+        const webRes = await fetch("/api/research", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            orgName, orgType, orgContext,
+            contactName: "", contactTitle: "",
+          }),
+        });
+        if (webRes.ok) {
+          const webData = await webRes.json();
+          orgResearch = webData?.text || "";
         }
+
+        // Fall back to knowledge-based research if web search returned nothing
+        if (!orgResearch.trim()) {
+          addLog(`Web search empty — using AI knowledge`, "info");
+          orgResearch = await callClaude([{
+            role: "user",
+            content: `Research ${orgName} (${orgType}) for a partnership outreach from Engine, a hotel booking platform.
+${orgContext ? `Known context: ${orgContext}` : ""}
+
+Answer these specifically:
+1. What does ${orgName} do and who do they serve? How large is their membership or customer base?
+2. What events, conferences, or gatherings do they run — how many per year and at what scale?
+3. How do they engage with members/customers on an ongoing basis (not one-off)? Annual events, chapter meetings, benefits programs, etc.?
+4. Do their members or customers travel for work, events, or participation in ways that involve hotels?
+5. What is the most natural entry point for Engine as a partner — group hotel bookings for their events, a member hotel benefit, or both?
+6. Any recent news, growth, or new programs worth mentioning?
+
+Be concrete and specific. 5-7 sentences. These are internal notes only.`,
+          }]);
+        }
+        addLog(`✓ Research complete for ${orgName}`, "ok");
+      } catch {
+        addLog(`Research skipped`, "info");
       }
       setStep(2, "done");
+
+      // All contacts at this org share the same org research
+      const contactResearch = enriched.map(() => orgResearch);
 
       // ── STEP 4: Draft Emails ─────────────────────────
       setStep(3, "active");
@@ -566,9 +534,6 @@ Your job: write the new email so that if ${activeProfile.repName} read it, they'
       for (let ci = 0; ci < enriched.length; ci++) {
         const contact = enriched[ci];
         const research = contactResearch[ci] || "";
-
-        // Role-specific framing for this contact
-        const roleAngle = getRoleAngle(contact.title);
 
         // Cross-contact context: note colleagues already contacted at this org
         const alreadyContacted = enriched.slice(0, ci);
@@ -596,9 +561,6 @@ Engine creates value in two ways for partners:
 
 WHAT MAKES A GOOD PARTNER (use this to frame the pitch):
 A good partner has ongoing, repeat engagement with their members or customers — not one-off transactions. They can naturally introduce Engine into their existing motion (annual events, chapter meetings, benefits programs, newsletters). Their members or customers have real hotel travel volume tied to their work or participation. The best partners see Engine as a value multiplier — not just a referral fee, but a tool that genuinely makes their members' lives easier and their org run better. The pitch is a two-sided value exchange: Engine makes their customers more successful, and the org earns from it.
-
-ROLE ANGLE for ${contact.title}:
-${roleAngle}
 
 ${research ? `RESEARCH (read this carefully — use the most relevant detail to show you did your homework and to tie the partnership angle to something real and specific about this org):
 ${research}` : ""}
@@ -633,7 +595,7 @@ SUBJECT: [subject line]
 
         const dp = parseDraft(draftRaw);
         const firstName = contact.name.split(" ")[0];
-        const emailBody = dp?.body || `Hi ${firstName},\n\nI'm with Engine, a hotel booking platform for ${orgType.toLowerCase()}s. ${roleAngle}.\n\nOpen to 15 minutes to explore the fit?\n\nBest,\n${activeProfile?.repName || ""}`;
+        const emailBody = dp?.body || `Hi ${firstName},\n\nI'm with Engine, a hotel booking platform for ${orgType.toLowerCase()}s.\n\nOpen to 15 minutes to explore the fit?\n\nBest,\n${activeProfile?.repName || ""}`;
 
         // Generate subject line in a dedicated call so it gets full attention
         const orgProper = contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
