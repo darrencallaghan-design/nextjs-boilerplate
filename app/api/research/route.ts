@@ -1,25 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // Uses Claude's built-in web_search tool (Anthropic handles execution server-side).
-// Claude searches the web and returns a final research summary in one API call.
+// Researches partnership fit signals — not just travel volume, but ongoing engagement,
+// member benefit potential, and natural intro paths for Engine.
 export async function POST(req: NextRequest) {
   const { orgName, orgType, contactName, contactTitle, orgContext } = await req.json();
 
-  const userMessage = `You are helping a business development rep at Engine.com (a B2B group travel platform) write a personalized outreach email.
+  const userMessage = `You are helping a partnerships rep at Engine write a personalized outreach email. Engine is a hotel booking platform that works with membership organizations and associations as partners — not just selling hotel bookings, but creating ongoing partnerships where Engine becomes a value-add for the org's members or customers.
 
-Search the web for recent, specific information about this organization:
+Search the web for specific, current information about this organization:
 
 Organization: ${orgName} (${orgType})
-Contact to email: ${contactName}, ${contactTitle}
+Contact: ${contactName}, ${contactTitle}
 ${orgContext ? `Additional context: ${orgContext}` : ""}
 
-Find:
-1. Any upcoming or recent events/conferences they organize
-2. Recent news, leadership changes, or announcements
-3. Their scale (how many members, chapters, events per year)
-4. Any travel-related challenges, RFPs, or initiatives
+Find and report on:
+1. What events, conferences, or gatherings does ${orgName} run, and at what scale? (How many attendees, how often, which cities?)
+2. How do they engage with members or customers on an ongoing basis — not one-off? (Annual events, chapter meetings, newsletters, benefits programs, certification programs?)
+3. Do their members or customers have meaningful hotel travel tied to their work or participation? (Crews traveling for jobs, members attending conferences, reps visiting chapters?)
+4. Any recent news, new programs, leadership changes, or growth that makes this a timely moment to reach out?
+5. What would make this org a good or bad fit as an Engine partner — are they transactional or do they have repeat ongoing engagement?
 
-Then write 4-6 concise, specific research notes a sales rep can use to personalize an outreach email. Include real details from what you found. No generic filler. These notes go to the rep, not in the email itself.`;
+Write 4-6 specific, factual research notes using real details you found. No generic filler. These notes are for the rep writing the email — they do not appear in the email itself.`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -38,7 +40,6 @@ Then write 4-6 concise, specific research notes a sales rep can use to personali
   });
 
   if (!res.ok) {
-    // Fall back gracefully — page.tsx will use the non-web-search research path
     return NextResponse.json({ text: "" }, { status: res.status });
   }
 

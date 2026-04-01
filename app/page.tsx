@@ -518,10 +518,19 @@ Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","compan
             addLog(`Web search empty — using AI knowledge for ${rc.name}`, "info");
             researchText = await callClaude([{
               role: "user",
-              content: `Based on what you know, research ${orgName} (${orgType}) for a sales outreach email to ${rc.name}, ${rc.title}.
+              content: `Research ${orgName} (${orgType}) to help write a partnership outreach email to ${rc.name}, ${rc.title}.
 ${orgContext ? `Context: ${orgContext}` : ""}
 
-Identify: what events/travel programs they run, a specific pain point for a ${rc.title}, and one tailored angle for Engine (group hotel booking platform). Be specific. 4-5 sentences. These are notes for the rep only.`,
+Engine is a hotel booking platform. We are looking for partnership opportunities — not just selling hotel bookings, but finding orgs that can become ongoing partners where Engine becomes a value-add to their members or customers.
+
+Identify:
+1. What events, conferences, or travel programs does ${orgName} run? How often and at what scale?
+2. How does ${orgName} engage with its members or customers on an ongoing basis (not one-off)? What is their existing "motion" (newsletters, annual events, chapter meetings, benefits programs)?
+3. Does their membership or customer base have meaningful hotel travel volume tied to their work or participation?
+4. What would Engine mean specifically for a ${rc.title} — operational value, member benefit, or revenue opportunity?
+5. Any specific recent news, growth, or events that make this a timely outreach?
+
+Be specific. 4-6 sentences. These are internal notes for the rep writing the email.`,
             }]);
           }
           contactResearch.push(researchText);
@@ -571,7 +580,7 @@ Your job: write the new email so that if ${activeProfile.repName} read it, they'
           role: "user",
           content: `${styleContext}
 
-Write a cold outreach email from ${activeProfile?.repName || "the rep"} to:
+Write a partnership outreach email from ${activeProfile?.repName || "the rep"} to:
 
 Name: ${contact.name}
 Title: ${contact.title}
@@ -579,42 +588,44 @@ Org: ${contact.company} (${orgType})
 ${orgContext ? `Context: ${orgContext}` : ""}
 
 WHAT ENGINE IS:
-Engine is a hotel booking platform for membership organizations and associations. Three things it offers:
-1. Group hotel rates for the org's own events (conferences, chapter meetings, competitions)
-2. Member benefit — members get preferred hotel rates when booking for themselves
-3. Referral revenue — the org earns when members book through Engine
-Always say "Engine", never "Engine.com". Hotels only — never mention flights or airlines.
+Engine is a hotel booking platform. Always say "Engine", never "Engine.com". Hotels only — never mention flights or airlines.
 
-ROLE ANGLE — lead with this for ${contact.title}:
+Engine creates value in two ways for partners:
+1. Operational tool: preferred hotel rates for the org's own events and group bookings
+2. Member/customer benefit + revenue: members get preferred hotel rates when booking through Engine, and the org earns referral revenue on those bookings
+
+WHAT MAKES A GOOD PARTNER (use this to frame the pitch):
+A good partner has ongoing, repeat engagement with their members or customers — not one-off transactions. They can naturally introduce Engine into their existing motion (annual events, chapter meetings, benefits programs, newsletters). Their members or customers have real hotel travel volume tied to their work or participation. The best partners see Engine as a value multiplier — not just a referral fee, but a tool that genuinely makes their members' lives easier and their org run better. The pitch is a two-sided value exchange: Engine makes their customers more successful, and the org earns from it.
+
+ROLE ANGLE for ${contact.title}:
 ${roleAngle}
 
-${research ? `RESEARCH — use this to make the email specific to this org. Pick the most relevant detail for this person's role and weave it in naturally. Don't list everything — just use what strengthens the email:
+${research ? `RESEARCH (read this carefully — use the most relevant detail to show you did your homework and to tie the partnership angle to something real and specific about this org):
 ${research}` : ""}
 
 ${crossContactNote}
 
-ANGLE GUIDANCE — based on the research and role, choose the right pitch focus:
-- If the org runs large events or conferences: lead with group hotel rates and logistics
-- If the role is development, membership, or partnerships: lead with referral revenue and member benefit
-- If both apply: mention both briefly in para 2
-- Do not force a group travel angle if the research suggests member benefit is a stronger fit
+WHAT TO WRITE:
+Based on the research, identify the strongest partnership angle for this org and contact. Is the hook their events? Their member base? Their existing benefits program? Their travel volume? Lead with the one angle that is most natural and specific to them — don't list everything Engine does.
 
-WORKING EXAMPLE (match this tone — not the words, the feel):
+WORKING EXAMPLE (match this tone and structure):
 "Hi Carley,
 I'm with Engine. I also reached out to Stephanie Abisi today, but wanted to connect with you given your development focus.
-Engine can serve as both an operational tool for Legion events and a value-add partnership, offering preferred hotel rates for members, referral revenue for the organization, and a cleaner booking experience across the board.
-Open to 20 minutes to explore the fit?"
+Engine can serve as both an operational tool for Legion events and a value-add partnership — preferred hotel rates for members, referral revenue for the organization, and a cleaner booking experience across the board. Given how frequently Legion chapters host events and the member travel that comes with that, it feels like a natural fit.
+Open to 20 minutes to explore?"
 
 RULES:
-- Para 1: Introduce yourself as being with Engine. Don't use the same formula every time ("I'm with Engine, a hotel booking platform for X"). Vary it. Sometimes lead with who you contacted at the org. Sometimes open with a specific observation about the org. Just make clear early that you're with Engine.
-- Para 2: The value — specific to this person's role, using the role angle and any research. Don't pad it, but don't cut substance either.
-- Para 3: Simple ask. "Open to X minutes?" or a soft question. No formal sign-off needed.
-- No em dashes (— or –). Use commas or plain sentence breaks instead.
-- No "I hope this finds you well", no "I wanted to reach out", no "I'm reaching out because"
-- Never write "Engine.com" — just "Engine"
+- Vary the opening — don't start every email with "I'm with Engine, a hotel booking platform for X." Sometimes lead with the cross-reference, sometimes with a specific observation about the org from research.
+- Para 1: Establish you're with Engine and, if applicable, the cross-reference.
+- Para 2: The partnership value — use research to make it specific. Show you understand their motion and why Engine fits naturally into it. Tie back to their members, their events, or their revenue opportunity.
+- Para 3: Simple, low-pressure ask. "Open to X minutes?" No formal sign-off.
+- Length: match the substance. Short if context is thin. Longer if research gives real detail to work with.
+- No em dashes (— or –) anywhere in the email. Use commas or new sentences instead.
+- No "I hope this finds you well", "I wanted to reach out", "I'm reaching out because"
+- Never "Engine.com"
 - Sound like ${activeProfile?.repName || "the rep"} based on their writing sample
 
-Write the email in this exact format — nothing else:
+Write the email in this exact format:
 SUBJECT: [subject line]
 
 [email body]`
