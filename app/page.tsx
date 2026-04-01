@@ -599,19 +599,19 @@ ANGLE GUIDANCE — based on the research and role, choose the right pitch focus:
 - If both apply: mention both briefly in para 2
 - Do not force a group travel angle if the research suggests member benefit is a stronger fit
 
-WORKING EXAMPLE (match this tone and structure):
+WORKING EXAMPLE (match this tone — not the words, the feel):
 "Hi Carley,
-I'm with Engine, a hotel booking platform for membership organizations. I also reached out to Stephanie Abisi today, but wanted to connect with you given your development focus.
+I'm with Engine. I also reached out to Stephanie Abisi today, but wanted to connect with you given your development focus.
 Engine can serve as both an operational tool for Legion events and a value-add partnership, offering preferred hotel rates for members, referral revenue for the organization, and a cleaner booking experience across the board.
 Open to 20 minutes to explore the fit?"
 
 RULES:
-- Para 1: "I'm with Engine, a hotel booking platform for [type of org]." Add cross-reference here if applicable.
-- Para 2: The value — specific to this person's role and org, using research where available. Length should match the substance: short if context is thin, longer if there's real detail to work with.
-- Para 3: Simple ask. "Open to X minutes?" or a soft question. No "Best regards" or formal sign-off needed.
+- Para 1: Introduce yourself as being with Engine. Don't use the same formula every time ("I'm with Engine, a hotel booking platform for X"). Vary it. Sometimes lead with who you contacted at the org. Sometimes open with a specific observation about the org. Just make clear early that you're with Engine.
+- Para 2: The value — specific to this person's role, using the role angle and any research. Don't pad it, but don't cut substance either.
+- Para 3: Simple ask. "Open to X minutes?" or a soft question. No formal sign-off needed.
 - No em dashes (— or –). Use commas or plain sentence breaks instead.
 - No "I hope this finds you well", no "I wanted to reach out", no "I'm reaching out because"
-- Never write "Engine.com"
+- Never write "Engine.com" — just "Engine"
 - Sound like ${activeProfile?.repName || "the rep"} based on their writing sample
 
 Write the email in this exact format — nothing else:
@@ -627,32 +627,38 @@ SUBJECT: [subject line]
         // Generate subject line in a dedicated call so it gets full attention
         let subject = stripEmDashes(dp?.subject || "");
         try {
+          const orgProper = contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
           const subjectRaw = await callClaude([{
             role: "user",
-            content: `Write a cold email subject line for this outreach email.
+            content: `Write a subject line for this cold outreach email.
 
-The email:
+Email:
 ---
 ${emailBody}
 ---
 
-Contact: ${contact.name}, ${contact.title} at ${contact.company}
+Recipient: ${contact.name}, ${contact.title} at ${orgProper}
 
-Rules for the subject line:
-- 4-7 words maximum
-- Professional and understated — sounds like it came from a person, not a sales tool
-- Never mention "rates", "savings", "discount", "opportunity", or "partnership"
-- Never use the org name in all lowercase (capitalize it properly: "${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}")
-- No em dashes, no exclamation marks
-- Should make the recipient curious enough to open, without sounding like spam
-- Good examples: "A thought on ${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}", "Hotel program for ${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}", "Quick intro re: ${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")} events", "${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")} + Engine"
-- Bad examples: "Hotel rates for ${orgName}", "Partnership Opportunity", "Quick question", "Following up"
+What to write:
+- Read the email and write a subject that reflects what it's actually about — the specific angle, the org, the value mentioned
+- 4-6 words. Feels like it came from a person.
+- Capitalize the org name correctly: "${orgProper}"
+- No "rates", "savings", "discount", "opportunity", "partnership", "quick question", "following up", "I wanted to"
+- No em dashes, no exclamation marks, no all-caps
+- Think: if you received this email, what subject line would make you open it without feeling sold to?
 
-Reply with ONLY the subject line. No punctuation at the end. No quotes.`
+Examples of the right tone (do not copy these — write one specific to this email):
+"${orgProper} hotel program"
+"${orgProper} conferences and Engine"
+"Intro re: ${orgProper} events"
+"Hotel block for ${orgProper}?"
+
+Reply with ONLY the subject line. No quotes. No punctuation at the end.`
           }]);
           subject = stripEmDashes(subjectRaw.trim().replace(/^["']|["']$/g, ""));
         } catch {
-          subject = subject || `A thought on ${contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}`;
+          const orgProperFallback = contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+          subject = subject || `${orgProperFallback} + Engine`;
         }
 
         newDrafts.push({
