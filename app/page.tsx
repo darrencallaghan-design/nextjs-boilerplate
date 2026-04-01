@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { useUser, UserButton } from "@clerk/nextjs";
 
 const ACCENT = "#f5c518";
 const BG = "#0e0e0e";
@@ -21,6 +20,8 @@ const ROLES: Record<string, string[]> = {
   "Educational Organization": ["President", "Director of Operations", "Events Coordinator"],
 };
 
+const STYLE_KEY = "engine-agent-style-v2";
+
 interface Contact {
   name: string;
   title: string;
@@ -35,6 +36,8 @@ interface Draft {
   subject: string;
   body: string;
   sentAt: string | null;
+  edited?: string; // stores rep's edited version
+  research?: string; // AI research notes for this contact
 }
 
 interface SentItem {
@@ -50,11 +53,10 @@ interface StepState {
 }
 
 interface StyleProfile {
-  tone: string;
-  length: string;
-  signoff: string;
-  focus: string;
-  extra: string;
+  repName: string;
+  writingSample: string;
+  extractedStyle: string; // Claude's analysis of their writing
+  editExamples: string[]; // saved edits to learn from
 }
 
 function fallbackContacts(orgName: string, orgType: string): Contact[] {
@@ -71,11 +73,11 @@ function parseJSON(raw: string) {
   try { return JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { return null; }
 }
 
-async function callClaude(messages: { role: string; content: string }[], mcpServers: unknown[] = []) {
+async function callClaude(messages: { role: string; content: string }[]) {
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, mcpServers }),
+    body: JSON.stringify({ messages }),
   });
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
   const data = await res.json();
@@ -139,63 +141,143 @@ function Steps({ steps }: { steps: StepState[] }) {
   );
 }
 
-// ── STYLE ONBOARDING MODAL ────────────────────────────────────────────────────
-function StyleOnboarding({ userName, onComplete }: { userName: string; onComplete: (profile: StyleProfile) => void }) {
-  const [step, setStep] = useState(0);
-  const [profile, setProfile] = useState<StyleProfile>({ tone: "", length: "", signoff: "", focus: "", extra: "" });
+// ── STYLE SETUP MODAL ─────────────────────────────────────────────────────────
+function StyleSetup({ onComplete }: { onComplete: (profile: StyleProfile) => void }) {
+  const [repName, setRepName] = useState("");
+  const [sample, setSample] = useState("");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [error, setError] = useState("");
 
-  const questions = [
-    {
-      key: "tone", question: "How would you describe your writing tone?",
-      options: ["Casual & friendly", "Professional & polished", "Direct & concise", "Warm & personal"],
-    },
-    {
-      key: "length", question: "How long do you like your outreach emails?",
-      options: ["Very short (3-4 sentences)", "Short (5-7 sentences)", "Medium (1-2 paragraphs)", "Detailed (2-3 paragraphs)"],
-    },
-    {
-      key: "signoff", question: "What's your usual email sign-off?",
-      options: [`Best, ${userName}`, `Thanks, ${userName}`, `Cheers, ${userName}`, `Talk soon, ${userName}`],
-    },
-    {
-      key: "focus", question: "What do you lead with in outreach?",
-      options: ["Their pain point", "Our solution", "A specific stat or hook", "A mutual connection or context"],
-    },
-  ];
+  const analyze = async () => {
+    if (!repName.trim()) { setError("Please enter your name."); return; }
+    if (sample.trim().length < 20) { setError("Please paste at least a short email or paragraph."); return; }
+    setError("");
+    setAnalyzing(true);
+    try {
+      const raw = await callClaude([{
+        role: "user",
+        content: `Analyze this person's writing style from their email sample. Extract: tone (formal/casual/warm/direct), typical length, how they open emails, how they sign off, what they lead with, any distinctive phrases or patterns.
 
-  const current = questions[step];
+Name: ${repName}
+Their writing sample:
+---
+${sample}
+---
 
-  const select = (val: string) => {
-    const updated = { ...profile, [current.key]: val };
-    setProfile(updated);
-    if (step < questions.length - 1) {
-      setStep(step + 1);
-    } else {
-      onComplete(updated);
+Return a concise style guide (3-5 sentences) that can be used to write future emails that sound exactly like them. Be specific about patterns you notice.`
+      }]);
+
+      onComplete({
+        repName: repName.trim(),
+        writingSample: sample.trim(),
+        extractedStyle: raw,
+        editExamples: [],
+      });
+    } catch {
+      setError("Something went wrong analyzing your style. Try again.");
+    } finally {
+      setAnalyzing(false);
     }
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 32, maxWidth: 440, width: "90%" }}>
-        <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 8 }}>
-          Style Setup — {step + 1} of {questions.length}
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 32, maxWidth: 500, width: "90%" }}>
+        <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 8 }}>First time setup</div>
+        <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>Let's learn how you write</div>
+        <div style={{ fontSize: 12, color: MUTED, marginBottom: 20, lineHeight: 1.6 }}>
+          Paste an email you've sent before — a prospecting email, a follow-up, anything. The AI will read it and write all future drafts in your exact style.
         </div>
-        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>{current.question}</div>
-        <div style={{ fontSize: 11, color: MUTED, marginBottom: 20 }}>This helps us write emails that sound like you, {userName}.</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {current.options.map(opt => (
-            <button key={opt} onClick={() => select(opt)} style={{ padding: "11px 14px", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#e8e8e8", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "border-color 0.2s" }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = ACCENT)}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = BORDER)}>
-              {opt}
-            </button>
-          ))}
+
+        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>Your name</div>
+        <input
+          value={repName}
+          onChange={e => setRepName(e.target.value)}
+          placeholder="e.g. Darren"
+          style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 14 }}
+        />
+
+        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>
+          Paste an email you've written <span style={{ color: MUTED, fontWeight: 400 }}>(or write a few sentences in your style)</span>
         </div>
-        <div style={{ marginTop: 16, display: "flex", gap: 4 }}>
-          {questions.map((_, i) => (
-            <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? ACCENT : BORDER }} />
-          ))}
+        <textarea
+          value={sample}
+          onChange={e => setSample(e.target.value)}
+          placeholder={"Hi [Name],\n\nWanted to reach out about..."}
+          style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 140, boxSizing: "border-box", lineHeight: 1.6 }}
+        />
+
+        {error && <div style={{ color: ERROR, fontSize: 11, marginTop: 8 }}>{error}</div>}
+
+        <button
+          onClick={analyze}
+          disabled={analyzing}
+          style={{ width: "100%", marginTop: 16, padding: "12px", background: analyzing ? "#333" : ACCENT, border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: 12, fontWeight: 700, color: analyzing ? MUTED : "#000", cursor: analyzing ? "not-allowed" : "pointer" }}>
+          {analyzing ? "Analyzing your style…" : "→ Save My Style & Start"}
+        </button>
+
+        <div style={{ marginTop: 12, fontSize: 10, color: MUTED, textAlign: "center" }}>
+          Don't have an example? Just write 2-3 sentences the way you'd normally open an email.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── STYLE VIEWER MODAL ────────────────────────────────────────────────────────
+function StyleViewer({ profile, onUpdate, onClose }: { profile: StyleProfile; onUpdate: (p: StyleProfile) => void; onClose: () => void }) {
+  const [sample, setSample] = useState(profile.writingSample);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const reanalyze = async () => {
+    setAnalyzing(true);
+    try {
+      const raw = await callClaude([{
+        role: "user",
+        content: `Analyze this person's writing style from their email sample. Extract: tone (formal/casual/warm/direct), typical length, how they open emails, how they sign off, what they lead with, any distinctive phrases or patterns.
+
+Name: ${profile.repName}
+Their writing sample:
+---
+${sample}
+---
+${profile.editExamples.length > 0 ? `\nThey have also edited AI drafts. Their edits show:\n${profile.editExamples.slice(-3).join("\n---\n")}` : ""}
+
+Return a concise style guide (3-5 sentences) that can be used to write future emails that sound exactly like them. Be specific about patterns you notice.`
+      }]);
+      onUpdate({ ...profile, writingSample: sample, extractedStyle: raw });
+      onClose();
+    } catch {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 32, maxWidth: 500, width: "90%" }}>
+        <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 8 }}>Your writing style</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{profile.repName}'s Style Profile</div>
+        <div style={{ fontSize: 11, color: INFO, lineHeight: 1.6, marginBottom: 16, padding: "10px 12px", background: "rgba(96,165,250,0.08)", borderRadius: 6, border: `1px solid rgba(96,165,250,0.2)` }}>
+          {profile.extractedStyle}
+        </div>
+        {profile.editExamples.length > 0 && (
+          <div style={{ fontSize: 10, color: MUTED, marginBottom: 14 }}>
+            ✓ Learned from {profile.editExamples.length} of your edits
+          </div>
+        )}
+        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>Update writing sample</div>
+        <textarea
+          value={sample}
+          onChange={e => setSample(e.target.value)}
+          style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 100, boxSizing: "border-box", lineHeight: 1.6 }}
+        />
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "10px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 6, fontFamily: "inherit", fontSize: 11, color: MUTED, cursor: "pointer" }}>
+            Close
+          </button>
+          <button onClick={reanalyze} disabled={analyzing} style={{ flex: 2, padding: "10px", background: analyzing ? "#333" : ACCENT, border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: 11, fontWeight: 700, color: analyzing ? MUTED : "#000", cursor: analyzing ? "not-allowed" : "pointer" }}>
+            {analyzing ? "Updating…" : "→ Update My Style"}
+          </button>
         </div>
       </div>
     </div>
@@ -203,10 +285,6 @@ function StyleOnboarding({ userName, onComplete }: { userName: string; onComplet
 }
 
 export default function EngineAgent() {
-  const { user, isLoaded } = useUser();
-  const firstName = user?.firstName || user?.username || "Rep";
-  const styleKey = user ? `engine-style-${user.id}` : null;
-
   const [orgName, setOrgName] = useState("");
   const [orgType, setOrgType] = useState("");
   const [orgContext, setOrgContext] = useState("");
@@ -218,29 +296,30 @@ export default function EngineAgent() {
   const [logs, setLogs] = useState<{ msg: string; cls: string }[]>([]);
   const [status, setStatus] = useState({ msg: "Enter an org name and run the workflow", cls: "" });
   const [styleProfile, setStyleProfile] = useState<StyleProfile | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
+  const [showStyleViewer, setShowStyleViewer] = useState(false);
+  const [editingDraft, setEditingDraft] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
+  const [expandedResearch, setExpandedResearch] = useState<number | null>(null);
   const [stepStates, setStepStates] = useState<StepState[]>([
-    { label: "ZoomInfo\nLookup", state: "" },
-    { label: "Pull\nEmails", state: "" },
+    { label: "Find\nContacts", state: "" },
+    { label: "Enrich\nEmails", state: "" },
+    { label: "Research\nEach", state: "" },
     { label: "Draft\nEmails", state: "" },
     { label: "Review\n& Send", state: "" },
   ]);
 
-  // Load this rep's saved style profile from localStorage on login
+  // Load saved style profile from localStorage
   useEffect(() => {
-    if (styleKey) {
-      try {
-        const saved = localStorage.getItem(styleKey);
-        if (saved) setStyleProfile(JSON.parse(saved));
-      } catch { /* ignore */ }
-    }
-  }, [styleKey]);
+    try {
+      const saved = localStorage.getItem(STYLE_KEY);
+      if (saved) setStyleProfile(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, []);
 
   const saveStyleProfile = (profile: StyleProfile) => {
     setStyleProfile(profile);
-    if (styleKey) {
-      try { localStorage.setItem(styleKey, JSON.stringify(profile)); } catch { /* ignore */ }
-    }
+    try { localStorage.setItem(STYLE_KEY, JSON.stringify(profile)); } catch { /* ignore */ }
   };
 
   const addLog = useCallback((msg: string, cls = "") => setLogs(prev => [...prev, { msg, cls }]), []);
@@ -251,20 +330,29 @@ export default function EngineAgent() {
     setContacts([]); setDrafts([]); setLogs([]);
     setStepStates(prev => prev.map(s => ({ ...s, state: "" })));
     setStatus({ msg: "Starting workflow…", cls: "" });
+    setEditingDraft(null);
   };
 
   const handleRunClick = () => {
-    if (!styleProfile) {
-      setShowOnboarding(true);
-    } else {
-      runWorkflow();
-    }
+    if (!styleProfile) { setShowSetup(true); return; }
+    runWorkflow();
   };
 
   const handleStyleComplete = (profile: StyleProfile) => {
     saveStyleProfile(profile);
-    setShowOnboarding(false);
+    setShowSetup(false);
     runWorkflow(profile);
+  };
+
+  // Save an edited draft as a style example so Claude learns from it
+  const saveEditAsStyle = (originalBody: string, editedBody: string) => {
+    if (!styleProfile) return;
+    const example = `Original draft:\n${originalBody}\n\nHow ${styleProfile.repName} rewrote it:\n${editedBody}`;
+    const updated: StyleProfile = {
+      ...styleProfile,
+      editExamples: [...styleProfile.editExamples, example].slice(-5), // keep last 5
+    };
+    saveStyleProfile(updated);
   };
 
   const runWorkflow = async (profile?: StyleProfile) => {
@@ -326,63 +414,115 @@ Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","compan
         if (!c.email) {
           const domain = orgName.toLowerCase().replace(/[^a-z0-9]/g, "") + ".org";
           c.email = c.name.split(" ")[0].toLowerCase() + "@" + domain;
-          addLog("Generated email for " + c.name, "info");
         }
         return c;
       });
       setContacts(enriched);
       setStep(1, "done");
-      addLog("Step 2 done — emails ready", "ok");
 
-      // ── STEP 3: Draft Emails ─────────────────────────
+      // ── STEP 3: Research Each Contact ───────────────
       setStep(2, "active");
-      setStatus({ msg: "Drafting personalized emails…", cls: "" });
+      setStatus({ msg: `Researching ${orgName} and each contact…`, cls: "" });
+      addLog(`Researching ${orgName} to find personalization hooks`, "info");
+
+      const contactResearch: string[] = [];
+      for (let ri = 0; ri < enriched.length; ri++) {
+        const rc = enriched[ri];
+        addLog(`Researching ${rc.name}…`, "info");
+        try {
+          const researchRaw = await callClaude([{
+            role: "user",
+            content: `You are helping a business development rep at Engine.com (a B2B group travel platform) prepare a personalized outreach email.
+
+Research this organization and contact:
+- Organization: ${orgName} (${orgType})
+- Contact: ${rc.name}, ${rc.title}
+${orgContext ? `- Known context: ${orgContext}` : ""}
+
+Based on what you know about organizations like this, identify:
+1. What travel programs or events this org likely runs (conferences, competitions, national events, chapter trips, etc.)
+2. A specific, believable hook or pain point relevant to ${rc.title} at a ${orgType} — something concrete they'd actually care about (e.g. cost control, last-minute bookings, coordinating travel for 500 students across 30 chapters)
+3. Any recent trends or pressures this type of org faces around group travel
+4. One specific angle that would make this rep stand out vs. generic vendor outreach
+
+Be concrete and specific — no generic filler. 3-5 sentences total. These notes are for the email writer only, not for the email itself.`
+          }]);
+          contactResearch.push(researchRaw);
+          addLog(`✓ Research complete for ${rc.name}`, "ok");
+        } catch {
+          contactResearch.push("");
+          addLog(`Research skipped for ${rc.name}`, "info");
+        }
+      }
+      setStep(2, "done");
+
+      // ── STEP 4: Draft Emails ─────────────────────────
+      setStep(3, "active");
+      setStatus({ msg: "Drafting personalized emails in your style…", cls: "" });
       const newDrafts: Draft[] = [];
 
-      const styleInstructions = activeProfile ? `
-Writing style instructions for ${firstName}:
-- Tone: ${activeProfile.tone}
-- Length preference: ${activeProfile.length}
-- Sign-off style: ${activeProfile.signoff}
-- Lead with: ${activeProfile.focus}
-Match this style closely. The email should sound like it was personally written by ${firstName}.` : "";
+      const styleContext = activeProfile ? `
+You are writing on behalf of ${activeProfile.repName}, a business development rep at Engine.com.
 
-      for (const contact of enriched) {
+${activeProfile.repName}'s writing style (extracted from their own emails):
+${activeProfile.extractedStyle}
+
+${activeProfile.editExamples.length > 0 ? `Examples of how ${activeProfile.repName} edits AI drafts (learn from these):
+${activeProfile.editExamples.slice(-3).join("\n---\n")}` : ""}
+
+Write the email to sound EXACTLY like ${activeProfile.repName}. Match their tone, length, structure, and sign-off precisely.` : "";
+
+      for (let ci = 0; ci < enriched.length; ci++) {
+        const contact = enriched[ci];
+        const research = contactResearch[ci] || "";
+
+        // Cross-contact context: note colleagues already contacted at this org
+        const alreadyContacted = enriched.slice(0, ci);
+        const crossContactNote = alreadyContacted.length > 0
+          ? `\nIMPORTANT — Team coordination: Other Engine reps have already reached out to the following people at ${orgName}: ${alreadyContacted.map(c => `${c.name} (${c.title})`).join(", ")}. If it feels natural, briefly acknowledge this coordination — e.g. "I know my colleague also reached out to ${alreadyContacted[0].name}..." — to show Engine is organized and intentional, not spamming.`
+          : "";
+
         const draftRaw = await callClaude([{
           role: "user",
-          content: `You are ${firstName}, a business development rep at Engine.com — a B2B travel platform for group travel (conferences, events, student trips).
+          content: `${styleContext}
 
 Write a short outreach email to:
 Name: ${contact.name}
 Title: ${contact.title}
 Org: ${contact.company} (${orgType})
-${orgContext ? "Context: " + orgContext : ""}
-${styleInstructions}
+${orgContext ? "Additional context: " + orgContext : ""}
+${crossContactNote}
+
+RESEARCH NOTES (use these to make the email feel tailored and specific — reference real details, not generic phrases):
+${research}
+
+About Engine.com: B2B travel platform for group travel (conferences, events, student trips). Key selling points: simplified group booking, cost savings, dedicated travel support, reporting for finance teams. End with a low-friction ask — a 15-min call or quick reply.
 
 Rules:
-- Reference their likely group travel / event needs
-- Pitch Engine.com (group booking, cost savings, dedicated support)
-- End with ask for a 15-min call
-- Do NOT make it sound like a template
-- Sign off as ${firstName}
+- Reference at least ONE specific thing from the research notes that would resonate with this person's role
+- Do NOT use generic phrases like "I hope this finds you well" or "I wanted to reach out"
+- Keep it short — under 150 words in the body
+- Make it feel like the rep did their homework, not like a mass email
 
 Return ONLY valid JSON:
-{"subject":"subject line","body":"email body"}`
+{"subject":"subject line","body":"full email body"}`
         }]);
 
         const dp = parseJSON(draftRaw);
         newDrafts.push({
-          to: contact.name, email: contact.email,
+          to: contact.name,
+          email: contact.email,
           subject: dp?.subject || `Partnership Opportunity — Engine.com × ${orgName}`,
-          body: dp?.body || `Hi ${contact.name.split(" ")[0]},\n\nWanted to reach out about Engine.com and ${contact.company}. We simplify group travel for events — saving time and money.\n\nWould love a quick 15-min call.\n\n${activeProfile?.signoff || `Best,\n${firstName}`}`,
+          body: dp?.body || `Hi ${contact.name.split(" ")[0]},\n\nWanted to reach out about Engine.com and ${contact.company}.\n\nBest,\n${activeProfile?.repName || ""}`,
           sentAt: null,
+          research,
         });
         addLog("Draft ready for " + contact.name, "ok");
       }
 
       setDrafts(newDrafts);
-      setStep(2, "done");
       setStep(3, "done");
+      setStep(4, "done");
       setStatus({ msg: "✓ Drafts ready — review and send", cls: "success" });
       addLog("Workflow complete", "ok");
       setTab("drafts");
@@ -396,7 +536,8 @@ Return ONLY valid JSON:
   };
 
   const openInGmail = (d: Draft, i: number, markSent: boolean) => {
-    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(d.email)}&su=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(d.body)}`;
+    const body = d.edited || d.body;
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(d.email)}&su=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(body)}`;
     window.open(gmailUrl, "_blank");
     if (markSent) {
       const now = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
@@ -406,18 +547,30 @@ Return ONLY valid JSON:
     }
   };
 
-  if (!isLoaded) {
-    return (
-      <div style={{ background: BG, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: MUTED, fontSize: 12, letterSpacing: "0.1em" }}>LOADING…</div>
-      </div>
-    );
-  }
+  const startEditing = (i: number) => {
+    setEditingDraft(i);
+    setEditText(drafts[i].edited || drafts[i].body);
+  };
+
+  const saveEdit = (i: number) => {
+    const original = drafts[i].body;
+    const edited = editText;
+    setDrafts(prev => prev.map((d, idx) => idx === i ? { ...d, edited } : d));
+    if (edited !== original) saveEditAsStyle(original, edited);
+    setEditingDraft(null);
+  };
 
   return (
     <div style={{ fontFamily: "'IBM Plex Sans', monospace", background: BG, color: "#e8e8e8", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
-      {showOnboarding && <StyleOnboarding userName={firstName} onComplete={handleStyleComplete} />}
+      {showSetup && <StyleSetup onComplete={handleStyleComplete} />}
+      {showStyleViewer && styleProfile && (
+        <StyleViewer
+          profile={styleProfile}
+          onUpdate={p => { saveStyleProfile(p); }}
+          onClose={() => setShowStyleViewer(false)}
+        />
+      )}
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px", borderBottom: `1px solid ${BORDER}`, background: SURFACE }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -429,8 +582,9 @@ Return ONLY valid JSON:
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {styleProfile && (
-            <button onClick={() => setShowOnboarding(true)} style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: 4, padding: "4px 10px", color: MUTED, fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.1em", textTransform: "uppercase" }}>
-              ✎ My Style
+            <button onClick={() => setShowStyleViewer(true)} style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: 4, padding: "4px 10px", color: MUTED, fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 5 }}>
+              ✎ {styleProfile.repName}'s Style
+              {styleProfile.editExamples.length > 0 && <span style={{ background: ACCENT, color: "#000", borderRadius: 3, padding: "1px 4px", fontSize: 8, fontWeight: 700 }}>{styleProfile.editExamples.length}</span>}
             </button>
           )}
           <nav style={{ display: "flex", gap: 24 }}>
@@ -441,11 +595,6 @@ Return ONLY valid JSON:
               </button>
             ))}
           </nav>
-          {/* Rep avatar + sign out via Clerk */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10, color: MUTED }}>{firstName}</span>
-            <UserButton afterSignOutUrl="/sign-in" />
-          </div>
         </div>
       </header>
 
@@ -467,7 +616,7 @@ Return ONLY valid JSON:
               value={orgContext} onChange={e => setOrgContext(e.target.value)} placeholder="e.g. Runs national conferences with 10k+ attendees..." />
             <button onClick={handleRunClick} disabled={running || !orgName}
               style={{ width: "100%", padding: "13px", background: running || !orgName ? "#333" : ACCENT, border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: 12, fontWeight: 700, color: running || !orgName ? MUTED : "#000", cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
-              {running ? "Running…" : styleProfile ? "→ Run Full Workflow" : "→ Set My Style & Run"}
+              {running ? "Running…" : styleProfile ? "→ Run Full Workflow" : "→ Set Up My Style & Run"}
             </button>
           </div>
 
@@ -520,19 +669,65 @@ Return ONLY valid JSON:
                       <div style={{ fontSize: 13, fontWeight: 600, marginTop: 3 }}>{d.subject}</div>
                     </div>
                     {d.sentAt && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: "rgba(76,175,80,0.15)", color: SUCCESS, letterSpacing: "0.08em" }}>SENT {d.sentAt}</span>}
+                    {d.edited && !d.sentAt && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: "rgba(245,197,24,0.1)", color: ACCENT, letterSpacing: "0.08em" }}>EDITED</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{d.body}</div>
-                  {!d.sentAt && (
-                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                      <button onClick={() => openInGmail(d, i, true)}
-                        style={{ padding: "7px 14px", background: ACCENT, color: "#000", border: "none", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
-                        ✉ Open in Gmail
+
+                  {d.research && (
+                    <div style={{ marginBottom: 10 }}>
+                      <button
+                        onClick={() => setExpandedResearch(expandedResearch === i ? null : i)}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: expandedResearch === i ? ACCENT : MUTED, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
+                        {expandedResearch === i ? "▾" : "▸"} AI Research Notes
                       </button>
-                      <button onClick={() => openInGmail(d, i, false)}
-                        style={{ padding: "7px 14px", background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-                        Preview only
-                      </button>
+                      {expandedResearch === i && (
+                        <div style={{ marginTop: 6, padding: "10px 12px", background: "rgba(245,197,24,0.05)", border: `1px solid rgba(245,197,24,0.15)`, borderRadius: 5, fontSize: 11, color: "#bbb", lineHeight: 1.6 }}>
+                          {d.research}
+                        </div>
+                      )}
                     </div>
+                  )}
+
+                  {editingDraft === i ? (
+                    <div>
+                      <textarea
+                        value={editText}
+                        onChange={e => setEditText(e.target.value)}
+                        style={{ width: "100%", background: BG, border: `1px solid ${ACCENT}`, borderRadius: 5, padding: "10px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 160, boxSizing: "border-box", lineHeight: 1.65 }}
+                      />
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                        <button onClick={() => saveEdit(i)}
+                          style={{ padding: "7px 14px", background: ACCENT, color: "#000", border: "none", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                          ✓ Save Edit & Update My Style
+                        </button>
+                        <button onClick={() => setEditingDraft(null)}
+                          style={{ padding: "7px 14px", background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                          Cancel
+                        </button>
+                      </div>
+                      <div style={{ fontSize: 10, color: MUTED, marginTop: 6 }}>
+                        Your edits will be saved to improve future drafts automatically.
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{d.edited || d.body}</div>
+                      {!d.sentAt && (
+                        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                          <button onClick={() => openInGmail(d, i, true)}
+                            style={{ padding: "7px 14px", background: ACCENT, color: "#000", border: "none", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                            ✉ Open in Gmail
+                          </button>
+                          <button onClick={() => startEditing(i)}
+                            style={{ padding: "7px 14px", background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                            ✎ Edit Draft
+                          </button>
+                          <button onClick={() => openInGmail(d, i, false)}
+                            style={{ padding: "7px 14px", background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                            Preview only
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ))
