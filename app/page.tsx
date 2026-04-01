@@ -101,13 +101,13 @@ function parseJSON(raw: string) {
   try { return JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { return null; }
 }
 
-// Strips em dashes — a common AI tell — replacing them with natural punctuation
+// Strips em and en dashes — common AI tells — replacing them with natural punctuation
 function stripEmDashes(text: string): string {
   return text
-    .replace(/ — /g, ", ")   // "Hi Sarah — we help" → "Hi Sarah, we help"
-    .replace(/— /g, "")      // leading em dash
-    .replace(/ —/g, "")      // trailing em dash
-    .replace(/—/g, ", ");    // bare em dash fallback
+    .replace(/ [—–] /g, ", ")  // spaced em or en dash → comma
+    .replace(/[—–] /g, "")     // leading dash
+    .replace(/ [—–]/g, "")     // trailing dash
+    .replace(/[—–]/g, ", ");   // bare dash fallback
 }
 
 // Parses an email written in plain text format: SUBJECT: ...\n\n[body]
@@ -625,9 +625,9 @@ SUBJECT: [subject line]
         const emailBody = dp?.body || `Hi ${firstName},\n\nI'm with Engine, a hotel booking platform for ${orgType.toLowerCase()}s. ${roleAngle}.\n\nOpen to 15 minutes to explore the fit?\n\nBest,\n${activeProfile?.repName || ""}`;
 
         // Generate subject line in a dedicated call so it gets full attention
+        const orgProper = contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
         let subject = stripEmDashes(dp?.subject || "");
         try {
-          const orgProper = contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
           const subjectRaw = await callClaude([{
             role: "user",
             content: `Write a subject line for this cold outreach email.
@@ -644,7 +644,7 @@ What to write:
 - 4-6 words. Feels like it came from a person.
 - Capitalize the org name correctly: "${orgProper}"
 - No "rates", "savings", "discount", "opportunity", "partnership", "quick question", "following up", "I wanted to"
-- No em dashes, no exclamation marks, no all-caps
+- No em dashes, no en dashes, no exclamation marks, no all-caps
 - Think: if you received this email, what subject line would make you open it without feeling sold to?
 
 Examples of the right tone (do not copy these — write one specific to this email):
@@ -655,11 +655,13 @@ Examples of the right tone (do not copy these — write one specific to this ema
 
 Reply with ONLY the subject line. No quotes. No punctuation at the end.`
           }]);
-          subject = stripEmDashes(subjectRaw.trim().replace(/^["']|["']$/g, ""));
+          const cleaned = stripEmDashes(subjectRaw.trim().replace(/^["']|["']$/g, ""));
+          if (cleaned) subject = cleaned;
         } catch {
-          const orgProperFallback = contact.company.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-          subject = subject || `${orgProperFallback} + Engine`;
+          // subject keeps its value from dp?.subject or falls through to the final fallback below
         }
+        // Final fallback if subject is still empty
+        if (!subject.trim()) subject = `${orgProper} + Engine`;
 
         newDrafts.push({
           to: contact.name,
