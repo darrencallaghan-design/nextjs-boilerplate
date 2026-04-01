@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
 
   const body: Record<string, unknown> = {
     model: "claude-sonnet-4-20250514",
-    max_tokens: 1000,
+    max_tokens: 2000,
     messages,
   };
   if (mcpServers && mcpServers.length > 0) body.mcp_servers = mcpServers;

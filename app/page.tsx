@@ -495,26 +495,35 @@ Write the email to sound EXACTLY like ${activeProfile.repName}. Match their tone
           role: "user",
           content: `${styleContext}
 
-Write a short outreach email to:
+Write a personalized cold outreach email for Engine.com to the contact below. Engine.com is a B2B group travel platform — we help organizations manage group bookings for conferences, competitions, national events, and chapter trips. Key benefits: simplified booking, cost savings (typically 15-20% vs. booking direct), dedicated travel support, and finance-ready reporting.
+
+CONTACT:
 Name: ${contact.name}
 Title: ${contact.title}
-Org: ${contact.company} (${orgType})
-${orgContext ? "Additional context: " + orgContext : ""}
+Organization: ${contact.company} (${orgType})
+${orgContext ? `Context: ${orgContext}` : ""}
 ${crossContactNote}
 
-RESEARCH NOTES (use these to make the email feel tailored and specific — reference real details, not generic phrases):
-${research}
+${research ? `RESEARCH (real details found about this org — use at least one specific fact from here):
+${research}` : `WHAT TO KNOW: This is a ${orgType}. Think about what travel programs they likely run — national conferences, regional competitions, chapter trips — and what a ${contact.title} would care about most (budget control, logistics complexity, vendor coordination, etc.).`}
 
-About Engine.com: B2B travel platform for group travel (conferences, events, student trips). Key selling points: simplified group booking, cost savings, dedicated travel support, reporting for finance teams. End with a low-friction ask — a 15-min call or quick reply.
+WHAT A GREAT EMAIL LOOKS LIKE:
+❌ Generic (avoid this):
+"Hi Sarah, I hope you're doing well. I wanted to reach out about Engine.com. We're a travel platform that helps organizations save money on group travel. Would you have time for a 15-minute call?"
 
-Rules:
-- Reference at least ONE specific thing from the research notes that would resonate with this person's role
-- Do NOT use generic phrases like "I hope this finds you well" or "I wanted to reach out"
-- Keep it short — under 150 words in the body
-- Make it feel like the rep did their homework, not like a mass email
+✅ Specific and tailored (aim for this):
+"Hi Sarah — coordinating travel for DECA's national conference is no small task, especially when you're moving thousands of students across 50 states. Engine handles exactly that kind of volume for student orgs, giving chapter advisors one booking portal instead of juggling 10 airline sites. Most orgs we work with save 15-20% on group rates. Would it make sense to connect before you finalize travel vendors for this year's event?"
 
-Return ONLY valid JSON:
-{"subject":"subject line","body":"full email body"}`
+RULES FOR THIS EMAIL:
+- Open with something specific to their org or role — never "I hope this finds you well" or "I wanted to reach out"
+- Name a real pain point they'd actually feel (logistics complexity, cost overruns, last-minute changes, finance reporting)
+- Mention one concrete Engine.com benefit that maps to that pain point
+- End with a soft, specific ask — a 15-min call or a simple reply question
+- Length: 3 short paragraphs, roughly 150-220 words in the body
+- Tone and structure must match the rep's style described above
+
+Return ONLY valid JSON with no extra text:
+{"subject":"subject line here","body":"full email body here"}`
         }]);
 
         const dp = parseJSON(draftRaw);
