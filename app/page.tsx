@@ -101,12 +101,24 @@ function parseJSON(raw: string) {
   try { return JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { return null; }
 }
 
+// Strips em dashes — a common AI tell — replacing them with natural punctuation
+function stripEmDashes(text: string): string {
+  return text
+    .replace(/ — /g, ", ")   // "Hi Sarah — we help" → "Hi Sarah, we help"
+    .replace(/— /g, "")      // leading em dash
+    .replace(/ —/g, "")      // trailing em dash
+    .replace(/—/g, ", ");    // bare em dash fallback
+}
+
 // Parses an email written in plain text format: SUBJECT: ...\n\n[body]
 // Falls back to JSON parsing for backwards compatibility.
 function parseDraft(raw: string): { subject: string; body: string } | null {
   // Try JSON first
   const json = parseJSON(raw);
-  if (json?.subject && json?.body) return { subject: json.subject, body: json.body };
+  if (json?.subject && json?.body) return {
+    subject: stripEmDashes(json.subject),
+    body: stripEmDashes(json.body),
+  };
 
   // Try plain text: look for SUBJECT: line
   const subjectMatch = raw.match(/^SUBJECT:\s*(.+)$/im);
@@ -114,13 +126,16 @@ function parseDraft(raw: string): { subject: string; body: string } | null {
     const subject = subjectMatch[1].trim();
     // Body is everything after the subject line and following blank lines
     const body = raw.replace(/^SUBJECT:\s*.+\n*/im, "").trim();
-    if (subject && body) return { subject, body };
+    if (subject && body) return { subject: stripEmDashes(subject), body: stripEmDashes(body) };
   }
 
   // Last resort: treat first line as subject, rest as body
   const lines = raw.trim().split("\n");
   if (lines.length >= 3) {
-    return { subject: lines[0].replace(/^subject:\s*/i, "").trim(), body: lines.slice(1).join("\n").trim() };
+    return {
+      subject: stripEmDashes(lines[0].replace(/^subject:\s*/i, "").trim()),
+      body: stripEmDashes(lines.slice(1).join("\n").trim()),
+    };
   }
 
   return null;
@@ -506,7 +521,7 @@ Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","compan
               content: `Based on what you know, research ${orgName} (${orgType}) for a sales outreach email to ${rc.name}, ${rc.title}.
 ${orgContext ? `Context: ${orgContext}` : ""}
 
-Identify: what events/travel programs they run, a specific pain point for a ${rc.title}, and one tailored angle for Engine.com (group travel platform). Be specific. 4-5 sentences. These are notes for the rep only.`,
+Identify: what events/travel programs they run, a specific pain point for a ${rc.title}, and one tailored angle for Engine (group hotel booking platform). Be specific. 4-5 sentences. These are notes for the rep only.`,
             }]);
           }
           contactResearch.push(researchText);
@@ -524,7 +539,7 @@ Identify: what events/travel programs they run, a specific pain point for a ${rc
       const newDrafts: Draft[] = [];
 
       const styleContext = activeProfile ? `
-You are ghostwriting a cold outreach email for ${activeProfile.repName}, a business development rep at Engine.com. The email must sound exactly like them — not like AI, not like a template.
+You are ghostwriting a cold outreach email for ${activeProfile.repName}, a business development rep at Engine. The email must sound exactly like them — not like AI, not like a template.
 
 Here is a real email ${activeProfile.repName} has written. Study the voice, sentence rhythm, length, how they open, how they close, their level of formality, and any signature phrases:
 
@@ -537,7 +552,7 @@ Style analysis: ${activeProfile.extractedStyle}
 ${activeProfile.editExamples.length > 0 ? `They have also corrected AI drafts. Here is what they changed and how — match this direction:
 ${activeProfile.editExamples.slice(-3).join("\n---\n")}` : ""}
 
-Your job: write the new email so that if ${activeProfile.repName} read it, they'd think "yes, this sounds like me." Copy their rhythm, not their words.` : `You are writing a cold outreach email for a business development rep at Engine.com.`;
+Your job: write the new email so that if ${activeProfile.repName} read it, they'd think "yes, this sounds like me." Copy their rhythm, not their words.` : `You are writing a cold outreach email for a business development rep at Engine.`;
 
       for (let ci = 0; ci < enriched.length; ci++) {
         const contact = enriched[ci];
@@ -549,46 +564,58 @@ Your job: write the new email so that if ${activeProfile.repName} read it, they'
         // Cross-contact context: note colleagues already contacted at this org
         const alreadyContacted = enriched.slice(0, ci);
         const crossContactNote = alreadyContacted.length > 0
-          ? `\nIMPORTANT — Team coordination: Other Engine reps have already reached out to the following people at ${orgName}: ${alreadyContacted.map(c => `${c.name} (${c.title})`).join(", ")}. If it feels natural, briefly acknowledge this coordination — e.g. "I know my colleague also reached out to ${alreadyContacted[0].name}..." — to show Engine is organized and intentional, not spamming.`
+          ? `CROSS-REFERENCE (mandatory): You already contacted ${alreadyContacted.map(c => `${c.name} (${c.title})`).join(" and ")} at ${orgName} today. In the first paragraph, state this directly: "I also reached out to ${alreadyContacted[0].name} today, but wanted to connect with you given your [their specific role focus]." Do not make this optional — always include it.`
           : "";
 
         const draftRaw = await callClaude([{
           role: "user",
           content: `${styleContext}
 
-Write a short cold outreach email from ${activeProfile?.repName || "the rep"} to:
+Write a cold outreach email from ${activeProfile?.repName || "the rep"} to:
 
 Name: ${contact.name}
 Title: ${contact.title}
 Org: ${contact.company} (${orgType})
 ${orgContext ? `Context: ${orgContext}` : ""}
 
-ENGINE (what you're pitching):
-Engine is a group hotel booking platform for membership organizations and associations. It helps orgs get preferred hotel rates for their events, gives members access to those rates, and generates referral revenue for the organization. Never say "Engine.com" — always just "Engine". Never mention airlines — Engine is hotels only.
+WHAT ENGINE IS:
+Engine is a hotel booking platform for membership organizations and associations. Three things it offers:
+1. Group hotel rates for the org's own events (conferences, chapter meetings, competitions)
+2. Member benefit — members get preferred hotel rates when booking for themselves
+3. Referral revenue — the org earns when members book through Engine
+Always say "Engine", never "Engine.com". Hotels only — never mention flights or airlines.
 
-ROLE ANGLE — use this exact framing for why Engine matters to THIS person:
+ROLE ANGLE — lead with this for ${contact.title}:
 ${roleAngle}
 
-${alreadyContacted.length > 0 ? `CROSS-REFERENCE — you already contacted ${alreadyContacted.map(c => c.name).join(" and ")} at this org today. Open the email by mentioning that, then explain why you're also reaching out to ${contact.name} specifically given their role. Example: "I also reached out to ${alreadyContacted[0].name} today, but wanted to connect with you given your [role focus]."` : ""}
-
-${research ? `RESEARCH (use at least one specific detail from this to make the email feel informed):
+${research ? `RESEARCH — use this to make the email specific to this org. Pick the most relevant detail for this person's role and weave it in naturally. Don't list everything — just use what strengthens the email:
 ${research}` : ""}
 
-THIS IS THE EXACT STYLE AND FORMAT TO FOLLOW — model your email on this working example:
+${crossContactNote}
+
+ANGLE GUIDANCE — based on the research and role, choose the right pitch focus:
+- If the org runs large events or conferences: lead with group hotel rates and logistics
+- If the role is development, membership, or partnerships: lead with referral revenue and member benefit
+- If both apply: mention both briefly in para 2
+- Do not force a group travel angle if the research suggests member benefit is a stronger fit
+
+WORKING EXAMPLE (match this tone and structure):
 "Hi Carley,
-I'm with Engine, a group hotel booking platform for membership organizations. I also reached out to Stephanie Abisi today, but wanted to connect with you, given your development focus.
+I'm with Engine, a hotel booking platform for membership organizations. I also reached out to Stephanie Abisi today, but wanted to connect with you given your development focus.
 Engine can serve as both an operational tool for Legion events and a value-add partnership, offering preferred hotel rates for members, referral revenue for the organization, and a cleaner booking experience across the board.
 Open to 20 minutes to explore the fit?"
 
 RULES:
-- Para 1: Introduce Engine as "a group hotel booking platform for [org type]." + cross-reference if applicable
-- Para 2: The role-specific value — make this as long as it needs to be. If you have specific research about this org, use it here to explain concretely how Engine fits their situation. If the role has nuance (e.g. a development director cares about both revenue AND operations), address both. Don't pad, but don't cut substance either.
-- Para 3: Simple ask — "Open to X minutes to explore the fit?" or similar
-- Length: use judgment. A short email (like the example) is right when context is thin. A longer one (150-200 words) is right when you have real research or the role warrants more explanation. Never add filler — only add length if it adds value.
-- No fluff, no "I hope this finds you well", no generic opener
-- Sound like ${activeProfile?.repName || "the rep"} based on the writing sample — keep it human
+- Para 1: "I'm with Engine, a hotel booking platform for [type of org]." Add cross-reference here if applicable.
+- Para 2: The value — specific to this person's role and org, using research where available. Length should match the substance: short if context is thin, longer if there's real detail to work with.
+- Para 3: Simple ask. "Open to X minutes?" or a soft question. No "Best regards" or formal sign-off needed.
+- Subject line: creative, specific, short (under 8 words). Reference the org name or their event or a specific benefit. Not "Partnership Opportunity". Not "Quick question". Not "Engine + [Org]". Think: what would make this person open it? Examples: "Hotel rates for [Event]?", "Member benefit idea for [Org]", "Quick thought on [Org] conferences"
+- No em dashes (— or –). Use commas or plain sentence breaks instead.
+- No "I hope this finds you well", no "I wanted to reach out", no "I'm reaching out because"
+- Never write "Engine.com"
+- Sound like ${activeProfile?.repName || "the rep"} based on their writing sample
 
-Write the email in this exact format:
+Write the email in this exact format — nothing else:
 SUBJECT: [subject line]
 
 [email body]`
@@ -599,8 +626,8 @@ SUBJECT: [subject line]
         newDrafts.push({
           to: contact.name,
           email: contact.email,
-          subject: dp?.subject || `Group Travel for ${orgName} — Engine.com`,
-          body: dp?.body || `Hi ${firstName},\n\nI'm with Engine, a group hotel booking platform for ${orgType.toLowerCase()}s. ${roleAngle}.\n\nOpen to 15 minutes to explore the fit?\n\nBest,\n${activeProfile?.repName || ""}`,
+          subject: stripEmDashes(dp?.subject || `Hotel rates for ${orgName} events`),
+          body: dp?.body || `Hi ${firstName},\n\nI'm with Engine, a hotel booking platform for ${orgType.toLowerCase()}s. ${roleAngle}.\n\nOpen to 15 minutes to explore the fit?\n\nBest,\n${activeProfile?.repName || ""}`,
           sentAt: null,
           research,
         });
