@@ -609,7 +609,7 @@ RULES:
 - Para 1: "I'm with Engine, a hotel booking platform for [type of org]." Add cross-reference here if applicable.
 - Para 2: The value — specific to this person's role and org, using research where available. Length should match the substance: short if context is thin, longer if there's real detail to work with.
 - Para 3: Simple ask. "Open to X minutes?" or a soft question. No "Best regards" or formal sign-off needed.
-- Subject line: creative, specific, short (under 8 words). Reference the org name or their event or a specific benefit. Not "Partnership Opportunity". Not "Quick question". Not "Engine + [Org]". Think: what would make this person open it? Examples: "Hotel rates for [Event]?", "Member benefit idea for [Org]", "Quick thought on [Org] conferences"
+- Subject line: short, professional, understated. Under 7 words. Should feel like it came from a person, not a sales tool. Never mention "rates", "savings", "discount", or "opportunity" — those read as spam. Never use the org name in lowercase. Good examples: "A thought on [Org Name]", "Hotel program for [Org Name]", "Quick intro re: [Org Name] events", "Idea for [Org Name] conferences", "[Org Name] + Engine". Bad examples: "Hotel rates for deca", "Partnership Opportunity", "Quick question"
 - No em dashes (— or –). Use commas or plain sentence breaks instead.
 - No "I hope this finds you well", no "I wanted to reach out", no "I'm reaching out because"
 - Never write "Engine.com"
@@ -626,7 +626,7 @@ SUBJECT: [subject line]
         newDrafts.push({
           to: contact.name,
           email: contact.email,
-          subject: stripEmDashes(dp?.subject || `Hotel rates for ${orgName} events`),
+          subject: stripEmDashes(dp?.subject || `A thought on ${orgName}`),
           body: dp?.body || `Hi ${firstName},\n\nI'm with Engine, a hotel booking platform for ${orgType.toLowerCase()}s. ${roleAngle}.\n\nOpen to 15 minutes to explore the fit?\n\nBest,\n${activeProfile?.repName || ""}`,
           sentAt: null,
           research,
