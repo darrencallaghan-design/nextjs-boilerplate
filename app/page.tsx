@@ -106,15 +106,18 @@ function parseDraft(raw: string): { subject: string; body: string } | null {
   return null;
 }
 
-async function callClaude(messages: { role: string; content: string }[], retries = 4): Promise<string> {
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+async function callClaude(messages: { role: string; content: string }[], retries = 5): Promise<string> {
+  await sleep(4000); // pace calls to stay under Tier 1 TPM limits
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages }),
   });
   if (res.status === 429 && retries > 0) {
-    const wait = (5 - retries) * 3000 + 2000; // 2s, 5s, 8s, 11s
-    await new Promise(r => setTimeout(r, wait));
+    const wait = retries * 10000; // 50s, 40s, 30s, 20s, 10s
+    await sleep(wait);
     return callClaude(messages, retries - 1);
   }
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
