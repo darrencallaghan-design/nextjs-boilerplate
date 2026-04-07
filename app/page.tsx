@@ -109,7 +109,7 @@ function parseDraft(raw: string): { subject: string; body: string } | null {
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 async function callClaude(messages: { role: string; content: string }[], retries = 5): Promise<string> {
-  await sleep(4000); // pace calls to stay under Tier 1 TPM limits
+  await sleep(1500); // pace calls to stay under Tier 1 TPM limits
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
