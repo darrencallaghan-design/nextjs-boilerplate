@@ -11,14 +11,7 @@ const SUCCESS = "#4caf50";
 const ERROR = "#f44336";
 const INFO = "#60a5fa";
 
-const ORG_TYPES = ["Student Organization", "Youth Nonprofit", "Professional Association", "Educational Organization"];
-
-const ROLES: Record<string, string[]> = {
-  "Student Organization": ["National Executive Director", "VP of Programs", "Director of Events"],
-  "Youth Nonprofit": ["Executive Director", "Programs Director", "Development Director"],
-  "Professional Association": ["CEO", "VP of Membership", "Director of Conferences"],
-  "Educational Organization": ["President", "Director of Operations", "Events Coordinator"],
-};
+const FALLBACK_ROLES = ["Executive Director", "VP of Programs", "Director of Events"];
 
 const STYLE_KEY = "engine-agent-style-v2";
 
@@ -60,12 +53,11 @@ interface StyleProfile {
 }
 
 
-function fallbackContacts(orgName: string, orgType: string): Contact[] {
-  const roles = ROLES[orgType] || ROLES["Professional Association"];
+function fallbackContacts(orgName: string): Contact[] {
   const names = ["Sarah Mitchell", "James Thornton", "Ana Rivera"];
   const domain = orgName.toLowerCase().replace(/[^a-z0-9]/g, "") + ".org";
   return names.map((name, i) => ({
-    name, title: roles[i] || "Director", company: orgName,
+    name, title: FALLBACK_ROLES[i] || "Director", company: orgName,
     email: name.split(" ")[0].toLowerCase() + "@" + domain, source: "Fallback",
   }));
 }
@@ -329,6 +321,7 @@ export default function EngineAgent() {
   const [orgName, setOrgName] = useState("");
   const [orgType, setOrgType] = useState("");
   const [orgContext, setOrgContext] = useState("");
+  const [batchMode, setBatchMode] = useState(false);
   const [tab, setTab] = useState("contacts");
   const [running, setRunning] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -399,10 +392,105 @@ export default function EngineAgent() {
   const runWorkflow = async (profile?: StyleProfile) => {
     const activeProfile = profile || styleProfile;
     if (!orgName.trim()) { alert("Enter an org name."); return; }
-    if (!orgType) { alert("Select an org type."); return; }
     if (running) return;
     setRunning(true);
     resetAll();
+
+    if (batchMode) {
+      try {
+        setStep(0, "active");
+        setStatus({ msg: `Finding 10 orgs similar to ${orgName}…`, cls: "" });
+        addLog(`Discovering orgs similar to ${orgName}…`, "info");
+
+        const orgsRaw = await callClaude([{ role: "user", content: `Find 10 real membership organizations similar to "${orgName}" that would be good Engine hotel partnership targets. Engine works with orgs that have repeat member engagement, events, and travel volume.
+Return ONLY valid JSON: {"orgs":[{"name":"Full Org Name","type":"e.g. Professional Association"}]}` }]);
+        const orgsJson = parseJSON(orgsRaw);
+        const orgList: { name: string; type: string }[] = orgsJson?.orgs?.slice(0, 10) || [];
+        if (!orgList.length) throw new Error("Could not find similar organizations");
+        addLog(`Found ${orgList.length} target orgs`, "ok");
+        setStep(0, "done");
+
+        const allContacts: Contact[] = [];
+        const allDrafts: Draft[] = [];
+
+        for (let oi = 0; oi < orgList.length; oi++) {
+          const org = orgList[oi];
+          setStatus({ msg: `${oi + 1}/${orgList.length}: Processing ${org.name}…`, cls: "" });
+          addLog(`Processing ${org.name}…`, "info");
+
+          // Contacts
+          let orgContacts: Contact[] = [];
+          try {
+            const ziRaw = await lookupZoomInfo(org.name, org.type, "");
+            orgContacts = extractContactsFromText(ziRaw, org.name);
+          } catch { /* fall through */ }
+          if (!orgContacts.length) {
+            const genRaw = await callClaude([{ role: "user", content: `Generate 3 realistic decision-maker contacts for "${org.name}" (${org.type}). Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","company":"${org.name}","email":"email@domain.org"}]}` }]);
+            const gp = parseJSON(genRaw);
+            for (const t of [gp?.contacts, gp?.results]) {
+              if (Array.isArray(t) && t.length) { orgContacts = t; break; }
+            }
+          }
+          if (!orgContacts.length) orgContacts = fallbackContacts(org.name);
+          orgContacts = orgContacts.slice(0, 3).map((c: Partial<Contact>) => ({
+            name: c?.name || "Unknown", title: c?.title || "Director",
+            company: c?.company || org.name,
+            email: c?.email || (String(c?.name || "contact").split(" ")[0].toLowerCase() + "@" + org.name.toLowerCase().replace(/[^a-z0-9]/g, "") + ".org"),
+            source: c?.source || "Generated",
+          }));
+          allContacts.push(...orgContacts);
+          setContacts([...allContacts]);
+
+          // Research
+          let orgResearch = "";
+          try {
+            const webRes = await fetch("/api/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orgName: org.name, orgType: org.type, orgContext: "", contactName: "", contactTitle: "" }) });
+            if (webRes.ok) orgResearch = (await webRes.json())?.text || "";
+            if (!orgResearch.trim()) orgResearch = await callClaude([{ role: "user", content: `Research ${org.name} (${org.type}) for an Engine hotel partnership. What events do they run, how large is their membership, do members travel, and what's the best partnership angle? 4-5 sentences, factual and specific.` }]);
+          } catch { /* skip */ }
+
+          // Emails
+          const styleContext = activeProfile ? `You are ghostwriting for ${activeProfile.repName} at Engine. Match their exact voice from this sample:\n---\n${activeProfile.writingSample}\n---\nStyle: ${activeProfile.extractedStyle}` : `You are writing outreach for a Engine partnerships rep.`;
+
+          for (let ci = 0; ci < orgContacts.length; ci++) {
+            const contact = orgContacts[ci];
+            const alreadyContacted = orgContacts.slice(0, ci);
+            const crossNote = alreadyContacted.length > 0 ? `CROSS-REFERENCE: You also contacted ${alreadyContacted.map(c => `${c.name} (${c.title})`).join(" and ")} at ${org.name} today. Mention this naturally.` : "";
+
+            let draftRaw = "";
+            try {
+              draftRaw = await callClaude([{ role: "user", content: `${styleContext}\n\nWrite a partnership outreach email to ${contact.name}, ${contact.title} at ${org.name} (${org.type}).\n\nENGINE: Hotel booking platform. Say "Engine" never "Engine.com". Hotels only.\nVALUE: 1) Preferred hotel rates for org events 2) Member hotel benefit + referral revenue for the org.\nPARTNERSHIP FIT: Orgs with repeat member engagement, events, travel volume. Engine = value multiplier, not just a referral fee.\n${orgResearch ? `RESEARCH: ${orgResearch}` : ""}\n${crossNote}\nROLE: ${contact.title} — angle the pitch to what matters most to someone in this role.\nRULES: No em dashes, no "Engine.com", no generic openers. Vary structure. Short ask at end.\n\nFormat:\nSUBJECT: [subject]\n\n[body]` }]);
+            } catch (e) { addLog(`Draft failed for ${contact.name}: ${(e as Error).message}`, "err"); }
+
+            const dp = parseDraft(draftRaw);
+            const firstName = contact.name.split(" ")[0];
+            const emailBody = dp?.body || `Hi ${firstName},\n\nI'm with Engine, a hotel booking platform for ${org.type.toLowerCase()}s.\n\nOpen to 15 minutes?\n\nBest,\n${activeProfile?.repName || ""}`;
+            const orgProper = org.name.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+            let subject = stripEmDashes(dp?.subject || "");
+            try {
+              const sr = await callClaude([{ role: "user", content: `Write a 4-6 word subject line for this cold outreach email to ${contact.name} at ${orgProper}. No em dashes, no exclamation marks, no "partnership" or "opportunity". Just reply with the subject line.\n\n${emailBody}` }]);
+              const cleaned = stripEmDashes(sr.trim().replace(/^["']|["']$/g, ""));
+              if (cleaned) subject = cleaned;
+            } catch { /* keep existing */ }
+            if (!subject.trim()) subject = `${orgProper} + Engine`;
+
+            allDrafts.push({ to: contact.name, email: contact.email, subject, body: emailBody, sentAt: null, research: orgResearch });
+            setDrafts([...allDrafts]);
+          }
+          addLog(`✓ ${org.name} complete`, "ok");
+        }
+
+        setStep(1, "done"); setStep(2, "done"); setStep(3, "done"); setStep(4, "done");
+        setStatus({ msg: `✓ ${allDrafts.length} drafts ready across ${orgList.length} orgs`, cls: "success" });
+        setTab("drafts");
+      } catch (err) {
+        addLog("Error: " + (err as Error).message, "err");
+        setStatus({ msg: "Error: " + (err as Error).message, cls: "error" });
+      } finally {
+        setRunning(false);
+      }
+      return;
+    }
 
     try {
       // ── STEP 1: ZoomInfo Lookup ──────────────────────
@@ -439,7 +527,7 @@ Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","compan
             if (Array.isArray(t) && t.length > 0) { finalContacts = t; break; }
           }
         }
-        if (!finalContacts.length) finalContacts = fallbackContacts(orgName, orgType);
+        if (!finalContacts.length) finalContacts = fallbackContacts(orgName);
         finalContacts = finalContacts.slice(0, 3).map((c: Partial<Contact>) => ({
           name: c?.name || "Unknown", title: c?.title || "Director",
           company: c?.company || orgName, email: c?.email || "", source: "Generated",
@@ -736,22 +824,31 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
       <div style={{ display: "flex", flex: 1 }}>
         <div style={{ width: 360, minWidth: 320, borderRight: `1px solid ${BORDER}`, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 18 }}>
-            <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: MUTED, marginBottom: 14 }}>Target Organization</div>
-            <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>Org Name</div>
-            <input style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box" }}
-              value={orgName} onChange={e => setOrgName(e.target.value)} placeholder="e.g. BPA, DECA, SkillsUSA" />
-            <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6, marginTop: 14 }}>Org Type</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {ORG_TYPES.map(t => (
-                <button key={t} onClick={() => setOrgType(t)} style={{ padding: "9px 10px", background: orgType === t ? "rgba(245,197,24,0.1)" : BG, border: `1px solid ${orgType === t ? ACCENT : BORDER}`, borderRadius: 5, color: orgType === t ? ACCENT : MUTED, fontSize: 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{t}</button>
-              ))}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: MUTED }}>Target Organization</div>
+              <div style={{ display: "flex", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, overflow: "hidden" }}>
+                {[["Single", false], ["Batch (10 orgs)", true]].map(([label, val]) => (
+                  <button key={String(label)} onClick={() => setBatchMode(val as boolean)}
+                    style={{ padding: "4px 10px", fontSize: 9, fontFamily: "inherit", border: "none", cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase", background: batchMode === val ? ACCENT : "transparent", color: batchMode === val ? "#000" : MUTED, fontWeight: batchMode === val ? 700 : 400 }}>
+                    {label as string}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6, marginTop: 14 }}>Context (Optional)</div>
-            <textarea style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 72, boxSizing: "border-box" }}
-              value={orgContext} onChange={e => setOrgContext(e.target.value)} placeholder="e.g. Runs national conferences with 10k+ attendees..." />
+            <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>{batchMode ? "Starting Point" : "Org Name"}</div>
+            <input style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+              value={orgName} onChange={e => setOrgName(e.target.value)} placeholder={batchMode ? "e.g. DECA — we'll find 10 similar orgs" : "e.g. BPA, DECA, SkillsUSA"} />
+            {!batchMode && (<>
+              <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6, marginTop: 14 }}>Org Type <span style={{ color: BORDER }}>(optional)</span></div>
+              <input style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", boxSizing: "border-box" }}
+                value={orgType} onChange={e => setOrgType(e.target.value)} placeholder="e.g. Professional Association, Student Org…" />
+            </>)}
+            <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6, marginTop: 14 }}>Context <span style={{ color: BORDER }}>(optional)</span></div>
+            <textarea style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 60, boxSizing: "border-box" }}
+              value={orgContext} onChange={e => setOrgContext(e.target.value)} placeholder={batchMode ? "e.g. Focus on orgs with large annual conferences…" : "e.g. Runs national conferences with 10k+ attendees..."} />
             <button onClick={handleRunClick} disabled={running || !orgName}
               style={{ width: "100%", padding: "13px", background: running || !orgName ? "#333" : ACCENT, border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: 12, fontWeight: 700, color: running || !orgName ? MUTED : "#000", cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
-              {running ? "Running…" : styleProfile ? "→ Run Full Workflow" : "→ Set Up My Style & Run"}
+              {running ? "Running…" : batchMode ? "→ Find 10 Orgs & Draft Emails" : styleProfile ? "→ Run Full Workflow" : "→ Set Up My Style & Run"}
             </button>
           </div>
 
