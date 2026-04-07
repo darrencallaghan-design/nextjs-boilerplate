@@ -822,7 +822,7 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
           )}
           <nav style={{ display: "flex", gap: 4 }}>
             {["contacts", "drafts", "sent"].map(t => (
-              <button key={t} onClick={() => setTab(t)} style={{ background: "none", border: "none", cursor: "pointer", color: tab === t ? TEXT : MUTED, fontSize: 13, fontWeight: tab === t ? 600 : 400, padding: "6px 12px", borderRadius: 6, fontFamily: "inherit", background: tab === t ? BG : "transparent" }}>
+              <button key={t} onClick={() => setTab(t)} style={{ background: tab === t ? BG : "transparent", border: "none", cursor: "pointer", color: tab === t ? TEXT : MUTED, fontSize: 13, fontWeight: tab === t ? 600 : 400, padding: "6px 12px", borderRadius: 6, fontFamily: "inherit" }}>
                 {t.charAt(0).toUpperCase() + t.slice(1)}
                 {t === "contacts" && contacts.length > 0 && <span style={{ marginLeft: 5, background: tab === t ? ACCENT : BORDER, color: tab === t ? "#fff" : MUTED, borderRadius: 10, padding: "1px 6px", fontSize: 10 }}>{contacts.length}</span>}
                 {t === "drafts" && drafts.length > 0 && <span style={{ marginLeft: 5, background: tab === t ? ACCENT : BORDER, color: tab === t ? "#fff" : MUTED, borderRadius: 10, padding: "1px 6px", fontSize: 10 }}>{drafts.length}</span>}
