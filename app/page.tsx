@@ -806,19 +806,10 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
       )}
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 28px", height: 56, borderBottom: `1px solid ${BORDER}`, background: SURFACE, boxShadow: "0 1px 0 rgba(0,0,0,0.06)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* Engine logo mark — matches brand icon */}
-          <svg width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="40" height="40" rx="8" fill="#10121A"/>
-            <rect x="9" y="12" width="22" height="3.5" rx="1.75" fill="white"/>
-            <rect x="9" y="18.25" width="15" height="3.5" rx="1.75" fill="white"/>
-            <rect x="9" y="24.5" width="18" height="3.5" rx="1.75" fill="white"/>
-          </svg>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 17, fontWeight: 700, color: TEXT, letterSpacing: "-0.02em", fontFamily: "'Inter', sans-serif" }}>Engine</span>
-            <span style={{ fontSize: 17, fontWeight: 400, color: TEXT_SECONDARY, letterSpacing: "-0.01em", fontFamily: "'Inter', sans-serif" }}>Agent</span>
-            <span style={{ fontSize: 11, color: MUTED, fontWeight: 400, marginLeft: 2 }}>· Partnership Prospecting</span>
-          </div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+          <span style={{ fontSize: 17, fontWeight: 700, color: TEXT, letterSpacing: "-0.02em", fontFamily: "'Inter', sans-serif" }}>Engine</span>
+          <span style={{ fontSize: 17, fontWeight: 400, color: TEXT_SECONDARY, letterSpacing: "-0.01em", fontFamily: "'Inter', sans-serif" }}>Agent</span>
+          <span style={{ fontSize: 11, color: MUTED, fontWeight: 400, marginLeft: 2 }}>· Partnership Prospecting</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {styleProfile && (
