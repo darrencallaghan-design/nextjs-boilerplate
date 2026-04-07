@@ -106,12 +106,17 @@ function parseDraft(raw: string): { subject: string; body: string } | null {
   return null;
 }
 
-async function callClaude(messages: { role: string; content: string }[]) {
+async function callClaude(messages: { role: string; content: string }[], retries = 4): Promise<string> {
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages }),
   });
+  if (res.status === 429 && retries > 0) {
+    const wait = (5 - retries) * 3000 + 2000; // 2s, 5s, 8s, 11s
+    await new Promise(r => setTimeout(r, wait));
+    return callClaude(messages, retries - 1);
+  }
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
   const data = await res.json();
   return data?.text || "";
