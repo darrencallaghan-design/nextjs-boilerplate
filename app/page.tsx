@@ -2,14 +2,16 @@
 
 import { useState, useCallback, useEffect } from "react";
 
-const ACCENT = "#f5c518";
-const BG = "#0e0e0e";
-const SURFACE = "#161616";
-const BORDER = "#2a2a2a";
-const MUTED = "#666";
-const SUCCESS = "#4caf50";
-const ERROR = "#f44336";
-const INFO = "#60a5fa";
+const ACCENT = "#FD4B23";
+const BG = "#F8F6F2";
+const SURFACE = "#FFFFFF";
+const BORDER = "#E8E5E0";
+const MUTED = "#9E9E9E";
+const TEXT = "#10121A";
+const TEXT_SECONDARY = "#616368";
+const SUCCESS = "#009262";
+const ERROR = "#E53935";
+const INFO = "#1476D8";
 
 const FALLBACK_ROLES = ["Executive Director", "VP of Programs", "Director of Events"];
 
@@ -161,19 +163,19 @@ function Steps({ steps }: { steps: StepState[] }) {
       {steps.map((step, i) => (
         <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
           {i < steps.length - 1 && (
-            <div style={{ position: "absolute", top: 11, left: "50%", width: "100%", height: 1, background: step.state === "done" ? ACCENT : BORDER, zIndex: 0 }} />
+            <div style={{ position: "absolute", top: 11, left: "50%", width: "100%", height: 2, background: step.state === "done" ? SUCCESS : BORDER, zIndex: 0 }} />
           )}
           <div style={{
             width: 22, height: 22, borderRadius: "50%", zIndex: 1, position: "relative",
-            border: `1px solid ${step.state === "done" ? SUCCESS : step.state === "active" ? ACCENT : step.state === "error" ? ERROR : BORDER}`,
-            background: step.state === "done" ? SUCCESS : step.state === "active" ? "rgba(245,197,24,0.12)" : step.state === "error" ? ERROR : BG,
+            border: `2px solid ${step.state === "done" ? SUCCESS : step.state === "active" ? ACCENT : step.state === "error" ? ERROR : BORDER}`,
+            background: step.state === "done" ? SUCCESS : step.state === "active" ? "rgba(253,75,35,0.08)" : step.state === "error" ? ERROR : SURFACE,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 9, fontWeight: 600,
-            color: step.state === "done" ? "#000" : step.state === "active" ? ACCENT : step.state === "error" ? "#fff" : MUTED,
+            fontSize: 9, fontWeight: 700,
+            color: step.state === "done" ? "#fff" : step.state === "active" ? ACCENT : step.state === "error" ? "#fff" : MUTED,
           }}>
             {step.state === "done" ? "✓" : step.state === "error" ? "✕" : i + 1}
           </div>
-          <div style={{ fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase", color: step.state === "done" ? SUCCESS : step.state === "active" ? ACCENT : MUTED, marginTop: 4, textAlign: "center", lineHeight: 1.3 }}>
+          <div style={{ fontSize: 9, fontWeight: 500, color: step.state === "done" ? SUCCESS : step.state === "active" ? ACCENT : MUTED, marginTop: 4, textAlign: "center", lineHeight: 1.3 }}>
             {step.label}
           </div>
         </div>
@@ -222,42 +224,42 @@ Return a concise style guide (3-5 sentences) that can be used to write future em
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 32, maxWidth: 500, width: "90%" }}>
-        <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 8 }}>First time setup</div>
-        <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>Let's learn how you write</div>
-        <div style={{ fontSize: 12, color: MUTED, marginBottom: 20, lineHeight: 1.6 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(16,18,26,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(4px)" }}>
+      <div style={{ background: SURFACE, borderRadius: 14, padding: 36, maxWidth: 500, width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: ACCENT, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>First time setup</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: TEXT, marginBottom: 8 }}>Let's learn how you write</div>
+        <div style={{ fontSize: 13, color: TEXT_SECONDARY, marginBottom: 24, lineHeight: 1.6 }}>
           Paste an email you've sent before — a prospecting email, a follow-up, anything. The AI will read it and write all future drafts in your exact style.
         </div>
 
-        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>Your name</div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: TEXT_SECONDARY, marginBottom: 6 }}>Your name</div>
         <input
           value={repName}
           onChange={e => setRepName(e.target.value)}
           placeholder="e.g. Darren"
-          style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 14 }}
+          style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 14px", color: TEXT, fontFamily: "inherit", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 16 }}
         />
 
-        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: TEXT_SECONDARY, marginBottom: 6 }}>
           Paste an email you've written <span style={{ color: MUTED, fontWeight: 400 }}>(or write a few sentences in your style)</span>
         </div>
         <textarea
           value={sample}
           onChange={e => setSample(e.target.value)}
           placeholder={"Hi [Name],\n\nWanted to reach out about..."}
-          style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 140, boxSizing: "border-box", lineHeight: 1.6 }}
+          style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 14px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", resize: "vertical", minHeight: 140, boxSizing: "border-box", lineHeight: 1.65 }}
         />
 
-        {error && <div style={{ color: ERROR, fontSize: 11, marginTop: 8 }}>{error}</div>}
+        {error && <div style={{ color: ERROR, fontSize: 12, marginTop: 8 }}>{error}</div>}
 
         <button
           onClick={analyze}
           disabled={analyzing}
-          style={{ width: "100%", marginTop: 16, padding: "12px", background: analyzing ? "#333" : ACCENT, border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: 12, fontWeight: 700, color: analyzing ? MUTED : "#000", cursor: analyzing ? "not-allowed" : "pointer" }}>
-          {analyzing ? "Analyzing your style…" : "→ Save My Style & Start"}
+          style={{ width: "100%", marginTop: 18, padding: "13px", background: analyzing ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: analyzing ? MUTED : "#fff", cursor: analyzing ? "not-allowed" : "pointer" }}>
+          {analyzing ? "Analyzing your style…" : "Save My Style & Start"}
         </button>
 
-        <div style={{ marginTop: 12, fontSize: 10, color: MUTED, textAlign: "center" }}>
+        <div style={{ marginTop: 12, fontSize: 12, color: MUTED, textAlign: "center" }}>
           Don't have an example? Just write 2-3 sentences the way you'd normally open an email.
         </div>
       </div>
@@ -294,30 +296,30 @@ Return a concise style guide (3-5 sentences) that can be used to write future em
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 32, maxWidth: 500, width: "90%" }}>
-        <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: ACCENT, marginBottom: 8 }}>Your writing style</div>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{profile.repName}'s Style Profile</div>
-        <div style={{ fontSize: 11, color: INFO, lineHeight: 1.6, marginBottom: 16, padding: "10px 12px", background: "rgba(96,165,250,0.08)", borderRadius: 6, border: `1px solid rgba(96,165,250,0.2)` }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(16,18,26,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(4px)" }}>
+      <div style={{ background: SURFACE, borderRadius: 14, padding: 36, maxWidth: 500, width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: ACCENT, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>Writing Style</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, marginBottom: 4 }}>{profile.repName}'s Style Profile</div>
+        <div style={{ fontSize: 13, color: TEXT_SECONDARY, lineHeight: 1.65, marginBottom: 16, padding: "12px 14px", background: "rgba(20,118,216,0.06)", borderRadius: 8, border: `1px solid rgba(20,118,216,0.15)` }}>
           {profile.extractedStyle}
         </div>
         {profile.editExamples.length > 0 && (
-          <div style={{ fontSize: 10, color: MUTED, marginBottom: 14 }}>
-            ✓ Learned from {profile.editExamples.length} of your edits
+          <div style={{ fontSize: 12, color: SUCCESS, marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>✓</span> Learned from {profile.editExamples.length} of your edits
           </div>
         )}
-        <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>Update writing sample</div>
+        <div style={{ fontSize: 12, fontWeight: 500, color: TEXT_SECONDARY, marginBottom: 6 }}>Update writing sample</div>
         <textarea
           value={sample}
           onChange={e => setSample(e.target.value)}
-          style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 100, boxSizing: "border-box", lineHeight: 1.6 }}
+          style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 14px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", resize: "vertical", minHeight: 100, boxSizing: "border-box", lineHeight: 1.65 }}
         />
-        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: "10px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 6, fontFamily: "inherit", fontSize: 11, color: MUTED, cursor: "pointer" }}>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 8, fontFamily: "inherit", fontSize: 13, color: TEXT_SECONDARY, cursor: "pointer" }}>
             Close
           </button>
-          <button onClick={reanalyze} disabled={analyzing} style={{ flex: 2, padding: "10px", background: analyzing ? "#333" : ACCENT, border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: 11, fontWeight: 700, color: analyzing ? MUTED : "#000", cursor: analyzing ? "not-allowed" : "pointer" }}>
-            {analyzing ? "Updating…" : "→ Update My Style"}
+          <button onClick={reanalyze} disabled={analyzing} style={{ flex: 2, padding: "11px", background: analyzing ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: analyzing ? MUTED : "#fff", cursor: analyzing ? "not-allowed" : "pointer" }}>
+            {analyzing ? "Updating…" : "Update My Style"}
           </button>
         </div>
       </div>
@@ -792,7 +794,7 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
   };
 
   return (
-    <div style={{ fontFamily: "'IBM Plex Sans', monospace", background: BG, color: "#e8e8e8", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", background: BG, color: TEXT, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
       {showSetup && <StyleSetup onComplete={handleStyleComplete} />}
       {showStyleViewer && styleProfile && (
@@ -803,26 +805,28 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
         />
       )}
 
-      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px", borderBottom: `1px solid ${BORDER}`, background: SURFACE }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, background: ACCENT, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, color: "#000" }}>E</div>
+      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 28px", height: 56, borderBottom: `1px solid ${BORDER}`, background: SURFACE, boxShadow: "0 1px 0 rgba(0,0,0,0.06)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="6" fill="#FD4B23"/><path d="M8 10h16M8 16h10M8 22h13" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></svg>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Engine Agent</div>
-            <div style={{ fontSize: 9, color: MUTED, letterSpacing: "0.14em", textTransform: "uppercase", marginTop: 2 }}>Partnership Prospecting AI</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, letterSpacing: "-0.01em" }}>Engine Agent</div>
+            <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>Partnership Prospecting</div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {styleProfile && (
-            <button onClick={() => setShowStyleViewer(true)} style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: 4, padding: "4px 10px", color: MUTED, fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.1em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 5 }}>
-              ✎ {styleProfile.repName}'s Style
-              {styleProfile.editExamples.length > 0 && <span style={{ background: ACCENT, color: "#000", borderRadius: 3, padding: "1px 4px", fontSize: 8, fontWeight: 700 }}>{styleProfile.editExamples.length}</span>}
+            <button onClick={() => setShowStyleViewer(true)} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 12px", color: TEXT_SECONDARY, fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}>
+              <span style={{ fontSize: 13 }}>✎</span> {styleProfile.repName}'s Style
+              {styleProfile.editExamples.length > 0 && <span style={{ background: ACCENT, color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 10, fontWeight: 600 }}>{styleProfile.editExamples.length}</span>}
             </button>
           )}
-          <nav style={{ display: "flex", gap: 24 }}>
+          <nav style={{ display: "flex", gap: 4 }}>
             {["contacts", "drafts", "sent"].map(t => (
-              <button key={t} onClick={() => setTab(t)} style={{ background: "none", border: "none", cursor: "pointer", color: tab === t ? ACCENT : MUTED, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit" }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: (t === "contacts" ? contacts.length > 0 : t === "drafts" ? drafts.length > 0 : sent.length > 0) ? ACCENT : BORDER, display: "inline-block" }} />
+              <button key={t} onClick={() => setTab(t)} style={{ background: "none", border: "none", cursor: "pointer", color: tab === t ? TEXT : MUTED, fontSize: 13, fontWeight: tab === t ? 600 : 400, padding: "6px 12px", borderRadius: 6, fontFamily: "inherit", background: tab === t ? BG : "transparent" }}>
                 {t.charAt(0).toUpperCase() + t.slice(1)}
+                {t === "contacts" && contacts.length > 0 && <span style={{ marginLeft: 5, background: tab === t ? ACCENT : BORDER, color: tab === t ? "#fff" : MUTED, borderRadius: 10, padding: "1px 6px", fontSize: 10 }}>{contacts.length}</span>}
+                {t === "drafts" && drafts.length > 0 && <span style={{ marginLeft: 5, background: tab === t ? ACCENT : BORDER, color: tab === t ? "#fff" : MUTED, borderRadius: 10, padding: "1px 6px", fontSize: 10 }}>{drafts.length}</span>}
+                {t === "sent" && sent.length > 0 && <span style={{ marginLeft: 5, background: tab === t ? ACCENT : BORDER, color: tab === t ? "#fff" : MUTED, borderRadius: 10, padding: "1px 6px", fontSize: 10 }}>{sent.length}</span>}
               </button>
             ))}
           </nav>
@@ -830,97 +834,99 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
       </header>
 
       <div style={{ display: "flex", flex: 1 }}>
-        <div style={{ width: 360, minWidth: 320, borderRight: `1px solid ${BORDER}`, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-              <div style={{ fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: MUTED }}>Target Organization</div>
-              <div style={{ display: "flex", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, overflow: "hidden" }}>
+        <div style={{ width: 340, minWidth: 300, borderRight: `1px solid ${BORDER}`, padding: 20, display: "flex", flexDirection: "column", gap: 14, background: SURFACE }}>
+          <div style={{ background: BG, borderRadius: 10, padding: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>Target Organization</div>
+              <div style={{ display: "flex", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 6, overflow: "hidden" }}>
                 {[["Single", false], ["Batch (10 orgs)", true]].map(([label, val]) => (
                   <button key={String(label)} onClick={() => setBatchMode(val as boolean)}
-                    style={{ padding: "4px 10px", fontSize: 9, fontFamily: "inherit", border: "none", cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase", background: batchMode === val ? ACCENT : "transparent", color: batchMode === val ? "#000" : MUTED, fontWeight: batchMode === val ? 700 : 400 }}>
+                    style={{ padding: "4px 10px", fontSize: 11, fontFamily: "inherit", border: "none", cursor: "pointer", background: batchMode === val ? ACCENT : "transparent", color: batchMode === val ? "#fff" : MUTED, fontWeight: batchMode === val ? 600 : 400 }}>
                     {label as string}
                   </button>
                 ))}
               </div>
             </div>
-            <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>{batchMode ? "Starting Point" : "Org Name"}</div>
-            <input style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+            <div style={{ fontSize: 11, fontWeight: 500, color: TEXT_SECONDARY, marginBottom: 5 }}>{batchMode ? "Starting Point" : "Organization Name"}</div>
+            <input style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, padding: "9px 12px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box" }}
               value={orgName} onChange={e => setOrgName(e.target.value)} placeholder={batchMode ? "e.g. DECA — we'll find 10 similar orgs" : "e.g. BPA, DECA, SkillsUSA"} />
             {!batchMode && (<>
-              <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6, marginTop: 14 }}>Org Type <span style={{ color: BORDER }}>(optional)</span></div>
-              <input style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", boxSizing: "border-box" }}
+              <div style={{ fontSize: 11, fontWeight: 500, color: TEXT_SECONDARY, marginBottom: 5, marginTop: 12 }}>Org Type <span style={{ color: MUTED, fontWeight: 400 }}>(optional)</span></div>
+              <input style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, padding: "9px 12px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box" }}
                 value={orgType} onChange={e => setOrgType(e.target.value)} placeholder="e.g. Professional Association, Student Org…" />
             </>)}
-            <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: MUTED, marginBottom: 6, marginTop: 14 }}>Context <span style={{ color: BORDER }}>(optional)</span></div>
-            <textarea style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "9px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 60, boxSizing: "border-box" }}
+            <div style={{ fontSize: 11, fontWeight: 500, color: TEXT_SECONDARY, marginBottom: 5, marginTop: 12 }}>Context <span style={{ color: MUTED, fontWeight: 400 }}>(optional)</span></div>
+            <textarea style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, padding: "9px 12px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", resize: "vertical", minHeight: 60, boxSizing: "border-box" }}
               value={orgContext} onChange={e => setOrgContext(e.target.value)} placeholder={batchMode ? "e.g. Focus on orgs with large annual conferences…" : "e.g. Runs national conferences with 10k+ attendees..."} />
             <button onClick={handleRunClick} disabled={running || !orgName}
-              style={{ width: "100%", padding: "13px", background: running || !orgName ? "#333" : ACCENT, border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: 12, fontWeight: 700, color: running || !orgName ? MUTED : "#000", cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
-              {running ? "Running…" : batchMode ? "→ Find 10 Orgs & Draft Emails" : styleProfile ? "→ Run Full Workflow" : "→ Set Up My Style & Run"}
+              style={{ width: "100%", padding: "12px", background: running || !orgName ? BORDER : ACCENT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: running || !orgName ? MUTED : "#fff", cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
+              {running ? "Running…" : batchMode ? "Find 10 Orgs & Draft Emails" : styleProfile ? "Run Full Workflow" : "Set Up Style & Run"}
             </button>
           </div>
 
-          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 18 }}>
+          <div style={{ background: BG, borderRadius: 10, padding: 18 }}>
             <Steps steps={stepStates} />
-            <div style={{ fontFamily: "monospace", fontSize: 11, color: status.cls === "error" ? ERROR : status.cls === "success" ? SUCCESS : MUTED, textAlign: "center", minHeight: 18, marginTop: 8 }}>{status.msg}</div>
+            <div style={{ fontSize: 12, color: status.cls === "error" ? ERROR : status.cls === "success" ? SUCCESS : TEXT_SECONDARY, textAlign: "center", minHeight: 18, marginTop: 8 }}>{status.msg}</div>
             {logs.length > 0 && (
               <div style={{ marginTop: 10, borderTop: `1px solid ${BORDER}`, paddingTop: 10 }}>
-                {logs.map((l, i) => <div key={i} style={{ fontFamily: "monospace", fontSize: 10, color: l.cls === "ok" ? SUCCESS : l.cls === "err" ? ERROR : l.cls === "info" ? INFO : MUTED, padding: "1px 0" }}>› {l.msg}</div>)}
+                {logs.map((l, i) => <div key={i} style={{ fontSize: 11, color: l.cls === "ok" ? SUCCESS : l.cls === "err" ? ERROR : l.cls === "info" ? INFO : MUTED, padding: "2px 0" }}>› {l.msg}</div>)}
               </div>
             )}
           </div>
         </div>
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", borderBottom: `1px solid ${BORDER}`, padding: "0 20px", background: SURFACE }}>
+          <div style={{ display: "flex", borderBottom: `1px solid ${BORDER}`, padding: "0 24px", background: SURFACE }}>
             {["contacts", "drafts", "sent"].map(t => (
-              <button key={t} onClick={() => setTab(t)} style={{ padding: "13px 16px", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: tab === t ? ACCENT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${tab === t ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit" }}>
+              <button key={t} onClick={() => setTab(t)} style={{ padding: "14px 16px", fontSize: 13, fontWeight: tab === t ? 600 : 400, color: tab === t ? TEXT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${tab === t ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit" }}>
                 {t.charAt(0).toUpperCase() + t.slice(1)}
-                {t === "contacts" && contacts.length > 0 && ` (${contacts.length})`}
-                {t === "drafts" && drafts.length > 0 && ` (${drafts.length})`}
-                {t === "sent" && sent.length > 0 && ` (${sent.length})`}
+                {t === "contacts" && contacts.length > 0 && <span style={{ marginLeft: 6, background: BG, borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>{contacts.length}</span>}
+                {t === "drafts" && drafts.length > 0 && <span style={{ marginLeft: 6, background: BG, borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>{drafts.length}</span>}
+                {t === "sent" && sent.length > 0 && <span style={{ marginLeft: 6, background: BG, borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>{sent.length}</span>}
               </button>
             ))}
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
             {tab === "contacts" && (contacts.length === 0
-              ? <div style={{ padding: "60px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div style={{ fontSize: 30, opacity: 0.2 }}>👤</div><div style={{ fontSize: 12, color: MUTED }}>Run the workflow to find contacts</div></div>
+              ? <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div style={{ fontSize: 40, opacity: 0.15 }}>👤</div><div style={{ fontSize: 14, color: MUTED }}>Run the workflow to find contacts</div></div>
               : contacts.map((c, i) => (
-                <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, padding: 14, display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(245,197,24,0.1)", border: `1px solid ${ACCENT}`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: 13, color: ACCENT, flexShrink: 0 }}>{c.name.charAt(0)}</div>
+                <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 16, display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 10, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                  <div style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(253,75,35,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, color: ACCENT, flexShrink: 0 }}>{c.name.charAt(0)}</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
-                    <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{c.title} · {c.company}</div>
-                    <div style={{ fontFamily: "monospace", fontSize: 10, color: INFO, marginTop: 5 }}>{c.email}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{c.name}</div>
+                    <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 2 }}>{c.title} · {c.company}</div>
+                    <div style={{ fontSize: 12, color: INFO, marginTop: 4 }}>{c.email}</div>
                   </div>
-                  <div style={{ fontSize: 9, padding: "3px 7px", borderRadius: 3, background: c.source === "ZoomInfo" ? "rgba(96,165,250,0.1)" : "rgba(245,197,24,0.1)", color: c.source === "ZoomInfo" ? INFO : ACCENT, letterSpacing: "0.08em", textTransform: "uppercase" }}>{c.source}</div>
+                  <div style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, background: c.source === "ZoomInfo" ? "rgba(20,118,216,0.08)" : "rgba(253,75,35,0.08)", color: c.source === "ZoomInfo" ? INFO : ACCENT, fontWeight: 500 }}>{c.source}</div>
                 </div>
               ))
             )}
 
             {tab === "drafts" && (drafts.length === 0
-              ? <div style={{ padding: "60px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div style={{ fontSize: 30, opacity: 0.2 }}>✉</div><div style={{ fontSize: 12, color: MUTED }}>Run the workflow to generate drafts</div></div>
+              ? <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div style={{ fontSize: 40, opacity: 0.15 }}>✉</div><div style={{ fontSize: 14, color: MUTED }}>Run the workflow to generate drafts</div></div>
               : drafts.map((d, i) => (
-                <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, padding: 16, marginBottom: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20, marginBottom: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                     <div>
-                      <div style={{ fontSize: 11, color: MUTED }}>To: <span style={{ color: "#e8e8e8", fontWeight: 500 }}>{d.to}</span> <span style={{ color: MUTED }}>{"<"}{d.email}{">"}</span></div>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginTop: 3 }}>{d.subject}</div>
+                      <div style={{ fontSize: 12, color: TEXT_SECONDARY }}>To: <span style={{ color: TEXT, fontWeight: 500 }}>{d.to}</span> <span style={{ color: MUTED }}>{"<"}{d.email}{">"}</span></div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: TEXT, marginTop: 4 }}>{d.subject}</div>
                     </div>
-                    {d.sentAt && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: "rgba(76,175,80,0.15)", color: SUCCESS, letterSpacing: "0.08em" }}>SENT {d.sentAt}</span>}
-                    {d.edited && !d.sentAt && <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: "rgba(245,197,24,0.1)", color: ACCENT, letterSpacing: "0.08em" }}>EDITED</span>}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {d.sentAt && <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 20, background: "rgba(0,146,98,0.08)", color: SUCCESS, fontWeight: 500 }}>Sent {d.sentAt}</span>}
+                      {d.edited && !d.sentAt && <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 20, background: "rgba(253,75,35,0.08)", color: ACCENT, fontWeight: 500 }}>Edited</span>}
+                    </div>
                   </div>
 
                   {d.research && (
-                    <div style={{ marginBottom: 10 }}>
+                    <div style={{ marginBottom: 12 }}>
                       <button
                         onClick={() => setExpandedResearch(expandedResearch === i ? null : i)}
-                        style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: expandedResearch === i ? ACCENT : MUTED, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
-                        {expandedResearch === i ? "▾" : "▸"} AI Research Notes
+                        style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, color: expandedResearch === i ? ACCENT : TEXT_SECONDARY, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
+                        {expandedResearch === i ? "▾" : "▸"} Research Notes
                       </button>
                       {expandedResearch === i && (
-                        <div style={{ marginTop: 6, padding: "10px 12px", background: "rgba(245,197,24,0.05)", border: `1px solid rgba(245,197,24,0.15)`, borderRadius: 5, fontSize: 11, color: "#bbb", lineHeight: 1.6 }}>
+                        <div style={{ marginTop: 8, padding: "12px 14px", background: BG, border: `1px solid ${BORDER}`, borderRadius: 7, fontSize: 12, color: TEXT_SECONDARY, lineHeight: 1.65 }}>
                           {d.research}
                         </div>
                       )}
@@ -932,38 +938,38 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
                       <textarea
                         value={editText}
                         onChange={e => setEditText(e.target.value)}
-                        style={{ width: "100%", background: BG, border: `1px solid ${ACCENT}`, borderRadius: 5, padding: "10px 12px", color: "#e8e8e8", fontFamily: "inherit", fontSize: 12, outline: "none", resize: "vertical", minHeight: 160, boxSizing: "border-box", lineHeight: 1.65 }}
+                        style={{ width: "100%", background: BG, border: `1px solid ${ACCENT}`, borderRadius: 7, padding: "12px 14px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", resize: "vertical", minHeight: 180, boxSizing: "border-box", lineHeight: 1.65 }}
                       />
                       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                         <button onClick={() => saveEdit(i)}
-                          style={{ padding: "7px 14px", background: ACCENT, color: "#000", border: "none", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                          ✓ Save Edit & Update My Style
+                          style={{ padding: "8px 16px", background: ACCENT, color: "#fff", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                          Save & Update Style
                         </button>
                         <button onClick={() => setEditingDraft(null)}
-                          style={{ padding: "7px 14px", background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                          style={{ padding: "8px 16px", background: "transparent", color: TEXT_SECONDARY, border: `1px solid ${BORDER}`, borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
                           Cancel
                         </button>
                       </div>
-                      <div style={{ fontSize: 10, color: MUTED, marginTop: 6 }}>
-                        Your edits will be saved to improve future drafts automatically.
+                      <div style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>
+                        Edits are saved to improve future drafts automatically.
                       </div>
                     </div>
                   ) : (
                     <>
-                      <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{d.edited || d.body}</div>
+                      <div style={{ fontSize: 13, color: TEXT_SECONDARY, lineHeight: 1.7, whiteSpace: "pre-wrap", borderTop: `1px solid ${BORDER}`, paddingTop: 12 }}>{d.edited || d.body}</div>
                       {!d.sentAt && (
-                        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
                           <button onClick={() => openInGmail(d, i, true)}
-                            style={{ padding: "7px 14px", background: ACCENT, color: "#000", border: "none", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                            ✉ Open in Gmail
+                            style={{ padding: "8px 16px", background: ACCENT, color: "#fff", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                            Open in Gmail
                           </button>
                           <button onClick={() => startEditing(i)}
-                            style={{ padding: "7px 14px", background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-                            ✎ Edit Draft
+                            style={{ padding: "8px 16px", background: "transparent", color: TEXT_SECONDARY, border: `1px solid ${BORDER}`, borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                            Edit Draft
                           </button>
                           <button onClick={() => openInGmail(d, i, false)}
-                            style={{ padding: "7px 14px", background: "transparent", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-                            Preview only
+                            style={{ padding: "8px 16px", background: "transparent", color: TEXT_SECONDARY, border: `1px solid ${BORDER}`, borderRadius: 7, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                            Preview
                           </button>
                         </div>
                       )}
@@ -974,14 +980,14 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
             )}
 
             {tab === "sent" && (sent.length === 0
-              ? <div style={{ padding: "60px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div style={{ fontSize: 30, opacity: 0.2 }}>📤</div><div style={{ fontSize: 12, color: MUTED }}>No sent emails yet</div></div>
+              ? <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div style={{ fontSize: 40, opacity: 0.15 }}>📤</div><div style={{ fontSize: 14, color: MUTED }}>No sent emails yet</div></div>
               : sent.map((item, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${BORDER}` }}>
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: `1px solid ${BORDER}` }}>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{item.to}</div>
-                    <div style={{ fontSize: 11, color: MUTED }}>{item.subject}</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: TEXT }}>{item.to}</div>
+                    <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 2 }}>{item.subject}</div>
                   </div>
-                  <div style={{ fontFamily: "monospace", fontSize: 11, color: MUTED }}>{item.sentAt}</div>
+                  <div style={{ fontSize: 12, color: MUTED }}>{item.sentAt}</div>
                 </div>
               ))
             )}
