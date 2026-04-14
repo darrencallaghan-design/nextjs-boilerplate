@@ -19,6 +19,15 @@ const STYLE_KEY = "engine-agent-style-v2";
 const REPORT_KEY = "engine-agent-reports-v1";
 const WAVE_KEY = "engine-agent-wave-v1";
 
+const STAGES: DealStage[] = ["Discovery", "Proposal", "Contracted", "Closed Won", "Closed Lost"];
+const STAGE_COLORS: Record<DealStage, { bg: string; text: string }> = {
+  "Discovery":   { bg: "rgba(20,118,216,0.1)",  text: "#1476D8" },
+  "Proposal":    { bg: "rgba(253,75,35,0.1)",   text: "#FD4B23" },
+  "Contracted":  { bg: "rgba(0,146,98,0.1)",    text: "#009262" },
+  "Closed Won":  { bg: "rgba(0,100,60,0.12)",   text: "#006437" },
+  "Closed Lost": { bg: "rgba(158,158,158,0.15)", text: "#9E9E9E" },
+};
+
 interface Contact {
   name: string;
   title: string;
@@ -41,8 +50,11 @@ interface Draft {
   reportId?: string;
 }
 
+type DealStage = "Discovery" | "Proposal" | "Contracted" | "Closed Won" | "Closed Lost";
+
 interface ReportEntry {
   id: string;
+  repName: string;
   wave: number;
   smerfCategory: string;
   organization: string;
@@ -52,7 +64,9 @@ interface ReportEntry {
   subjectLine: string;
   dateSent: string | null;
   status: "Sent" | "Fallback" | "Pending";
+  stage: DealStage;
   followUpDue: string | null;
+  followUpSent: boolean;
   notes: string;
 }
 
@@ -370,6 +384,7 @@ export default function EngineAgent() {
   const [reportEntries, setReportEntries] = useState<ReportEntry[]>([]);
   const [waveNumber, setWaveNumber] = useState(1);
   const [reportSubTab, setReportSubTab] = useState<"log" | "summary">("log");
+  const [generatingFollowUp, setGeneratingFollowUp] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
   const [expandedResearch, setExpandedResearch] = useState<number | null>(null);
@@ -381,20 +396,43 @@ export default function EngineAgent() {
     { label: "Review\n& Send", state: "" },
   ]);
 
-  // Load saved style profile and report data from localStorage
+  // Load style profile from localStorage; load reports from Supabase
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STYLE_KEY);
       if (saved) setStyleProfile(JSON.parse(saved));
     } catch { /* ignore */ }
     try {
-      const savedReports = localStorage.getItem(REPORT_KEY);
-      if (savedReports) setReportEntries(JSON.parse(savedReports));
-    } catch { /* ignore */ }
-    try {
       const savedWave = localStorage.getItem(WAVE_KEY);
       if (savedWave) setWaveNumber(parseInt(savedWave) || 1);
     } catch { /* ignore */ }
+    // Load shared report data from Supabase
+    fetch("/api/reports")
+      .then(r => r.json())
+      .then(data => {
+        if (data.entries) {
+          // Map snake_case DB fields back to camelCase
+          const mapped = data.entries.map((e: Record<string, unknown>) => ({
+            id: e.id,
+            repName: e.rep_name || "",
+            wave: e.wave || 1,
+            smerfCategory: e.smerf_category || "",
+            organization: e.organization || "",
+            contactName: e.contact_name || "",
+            title: e.title || "",
+            email: e.email || "",
+            subjectLine: e.subject_line || "",
+            dateSent: e.date_sent || null,
+            status: e.status || "Pending",
+            stage: (e.stage as DealStage) || "Discovery",
+            followUpDue: e.follow_up_due || null,
+            followUpSent: e.follow_up_sent || false,
+            notes: e.notes || "",
+          }));
+          setReportEntries(mapped);
+        }
+      })
+      .catch(() => { /* fall back silently */ });
   }, []);
 
   const saveStyleProfile = (profile: StyleProfile) => {
@@ -404,7 +442,22 @@ export default function EngineAgent() {
 
   const saveReportEntries = (entries: ReportEntry[]) => {
     setReportEntries(entries);
-    try { localStorage.setItem(REPORT_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+    // Persist to Supabase
+    if (entries.length > 0) {
+      fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entries),
+      }).catch(() => { /* ignore */ });
+    }
+  };
+
+  const patchReportEntry = (id: string, updates: Partial<ReportEntry>) => {
+    fetch("/api/reports", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...updates }),
+    }).catch(() => { /* ignore */ });
   };
 
   const addLog = useCallback((msg: string, cls = "") => setLogs(prev => [...prev, { msg, cls }]), []);
@@ -530,6 +583,7 @@ Return ONLY valid JSON: {"orgs":[{"name":"Full Org Name","type":"e.g. Profession
             const batchEntryId = `${Date.now()}-${oi}-${ci}`;
             const batchEntry: ReportEntry = {
               id: batchEntryId,
+              repName: activeProfile?.repName || "",
               wave: thisWave,
               smerfCategory: categorizeSmerf(org.type),
               organization: contact.company,
@@ -539,7 +593,9 @@ Return ONLY valid JSON: {"orgs":[{"name":"Full Org Name","type":"e.g. Profession
               subjectLine: subject,
               dateSent: null,
               status: contact.source === "Fallback" ? "Fallback" : "Pending",
+              stage: "Discovery" as DealStage,
               followUpDue: null,
+              followUpSent: false,
               notes: "",
             };
             newReportEntries.push(batchEntry);
@@ -808,6 +864,7 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
         const singleEntryId = `${Date.now()}-${ci}`;
         const singleEntry: ReportEntry = {
           id: singleEntryId,
+          repName: activeProfile?.repName || "",
           wave: thisWave,
           smerfCategory: categorizeSmerf(orgType),
           organization: contact.company,
@@ -817,7 +874,9 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
           subjectLine: subject,
           dateSent: null,
           status: contact.source === "Fallback" ? "Fallback" : "Pending",
+          stage: "Discovery" as DealStage,
           followUpDue: null,
+          followUpSent: false,
           notes: "",
         };
         newReportEntries.push(singleEntry);
@@ -869,17 +928,77 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
       setDrafts(prev => prev.map((dr, idx) => idx === i ? { ...dr, sentAt: now } : dr));
       setSent(prev => [...prev, { to: d.to, email: d.email, subject: d.subject, sentAt: now }]);
       addLog("Opened Gmail for " + d.to, "ok");
-      // Update report entry to Sent
-      setReportEntries(prev => {
-        const updated = prev.map(entry =>
-          (d.reportId && entry.id === d.reportId) || entry.email === d.email
-            ? { ...entry, status: "Sent" as const, dateSent: todayStr, followUpDue: followUpStr }
-            : entry
-        );
-        try { localStorage.setItem(REPORT_KEY, JSON.stringify(updated)); } catch { /* ignore */ }
-        return updated;
-      });
+      // Update report entry to Sent in state + Supabase
+      setReportEntries(prev => prev.map(entry => {
+        if ((d.reportId && entry.id === d.reportId) || entry.email === d.email) {
+          patchReportEntry(entry.id, { status: "Sent", dateSent: todayStr, followUpDue: followUpStr });
+          return { ...entry, status: "Sent" as const, dateSent: todayStr, followUpDue: followUpStr };
+        }
+        return entry;
+      }));
     }
+  };
+
+  const updateEntryStage = (entryId: string, stage: DealStage) => {
+    setReportEntries(prev => prev.map(e => e.id === entryId ? { ...e, stage } : e));
+    patchReportEntry(entryId, { stage });
+  };
+
+  const updateEntryNotes = (entryId: string, notes: string) => {
+    setReportEntries(prev => prev.map(e => e.id === entryId ? { ...e, notes } : e));
+    patchReportEntry(entryId, { notes });
+  };
+
+  const generateFollowUp = async (entry: ReportEntry) => {
+    setGeneratingFollowUp(entry.id);
+    try {
+      const styleContext = styleProfile
+        ? `You are ghostwriting for ${styleProfile.repName} at Engine. Match their voice exactly:\n${styleProfile.writingSample}\nStyle: ${styleProfile.extractedStyle}`
+        : "You are writing for an Engine partnerships rep.";
+
+      const raw = await callClaude([{
+        role: "user",
+        content: `${styleContext}
+
+Write a short follow-up email to ${entry.contactName} at ${entry.organization}.
+
+You emailed them about 7 days ago. Subject of that email: "${entry.subjectLine}". They haven't replied yet.
+
+Rules:
+- 2-3 sentences max. Short and human.
+- Reference that you reached out previously but don't quote or repeat your original email
+- Low pressure — just nudging, not chasing
+- End with a single simple question or soft ask
+- No em dashes anywhere
+- Do not open with "I hope this finds you well", "Just following up", or "I wanted to circle back"
+- Sound like ${styleProfile?.repName || "the rep"} based on their sample
+
+Format:
+SUBJECT: Re: ${entry.subjectLine}
+
+[body]`
+      }]);
+
+      const dp = parseDraft(raw);
+      const firstName = entry.contactName.split(" ")[0];
+      const body = dp?.body || `Hi ${firstName},\n\nWanted to check back on my previous note. Worth a quick call?\n\n${styleProfile?.repName || ""}`;
+      const subject = dp?.subject || `Re: ${entry.subjectLine}`;
+
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(entry.email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.open(gmailUrl, "_blank");
+
+      setReportEntries(prev => prev.map(e => e.id === entry.id ? { ...e, followUpSent: true } : e));
+      patchReportEntry(entry.id, { followUpSent: true });
+    } catch (err) {
+      console.error("Follow-up failed:", err);
+    } finally {
+      setGeneratingFollowUp(null);
+    }
+  };
+
+  const isOverdue = (entry: ReportEntry) => {
+    if (entry.status !== "Sent" || entry.followUpSent || !entry.followUpDue) return false;
+    try { return new Date(entry.followUpDue) < new Date(); } catch { return false; }
   };
 
   const startEditing = (i: number) => {
@@ -1096,29 +1215,29 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
 
             {tab === "reports" && (() => {
               const sentEntries = reportEntries.filter(e => e.status === "Sent");
-              const allOrgs = [...new Set(reportEntries.map(e => e.organization))];
               const sentOrgs = [...new Set(sentEntries.map(e => e.organization))];
-
-              // Category breakdown
+              const overdueEntries = reportEntries.filter(e => isOverdue(e));
               const catCounts: Record<string, number> = {};
-              reportEntries.forEach(e => {
-                catCounts[e.smerfCategory] = (catCounts[e.smerfCategory] || 0) + 1;
-              });
-              const fallbackCount = reportEntries.filter(e => e.status === "Fallback").length;
+              reportEntries.forEach(e => { catCounts[e.smerfCategory] = (catCounts[e.smerfCategory] || 0) + 1; });
 
               return (
                 <div>
                   {/* Sub-tabs */}
-                  <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: `1px solid ${BORDER}`, marginLeft: -24, marginRight: -24, paddingLeft: 24 }}>
+                  <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: `1px solid ${BORDER}`, marginLeft: -24, marginRight: -24, paddingLeft: 24, alignItems: "center" }}>
                     {[["log", "Activity Log"], ["summary", "Summary"]].map(([id, label]) => (
                       <button key={id} onClick={() => setReportSubTab(id as "log" | "summary")}
                         style={{ padding: "10px 18px", fontSize: 13, fontWeight: reportSubTab === id ? 600 : 400, color: reportSubTab === id ? TEXT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${reportSubTab === id ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit" }}>
                         {label}
                       </button>
                     ))}
+                    {overdueEntries.length > 0 && (
+                      <span style={{ marginLeft: 8, background: "rgba(253,75,35,0.1)", color: ACCENT, fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 20 }}>
+                        {overdueEntries.length} follow-up{overdueEntries.length > 1 ? "s" : ""} overdue
+                      </span>
+                    )}
                     {reportEntries.length > 0 && (
                       <button
-                        onClick={() => { if (confirm("Clear all report data? This cannot be undone.")) { saveReportEntries([]); setWaveNumber(1); try { localStorage.removeItem(WAVE_KEY); } catch { /* ignore */ } } }}
+                        onClick={() => { if (confirm("Clear all report data? This cannot be undone.")) { setReportEntries([]); setWaveNumber(1); try { localStorage.removeItem(WAVE_KEY); } catch { /* ignore */ } fetch("/api/reports", { method: "DELETE" }).catch(() => {}); } }}
                         style={{ marginLeft: "auto", marginRight: 24, padding: "10px 12px", fontSize: 11, color: MUTED, border: "none", background: "none", cursor: "pointer", fontFamily: "inherit" }}>
                         Clear Data
                       </button>
@@ -1133,12 +1252,12 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
                   ) : reportSubTab === "summary" ? (
                     <div>
                       {/* Metric cards */}
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 28 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 28 }}>
                         {[
                           { label: "Contacts Emailed", value: sentEntries.length, color: SUCCESS },
                           { label: "Orgs Contacted", value: sentOrgs.length, color: ACCENT },
                           { label: "Total in Pipeline", value: reportEntries.length, color: INFO },
-                          { label: "Fallback / Pending", value: fallbackCount + reportEntries.filter(e => e.status === "Pending").length, color: MUTED },
+                          { label: "Follow-ups Overdue", value: overdueEntries.length, color: overdueEntries.length > 0 ? ACCENT : MUTED },
                         ].map((m, i) => (
                           <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "16px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
                             <div style={{ fontSize: 28, fontWeight: 700, color: m.color, letterSpacing: "-0.02em" }}>{m.value}</div>
@@ -1147,10 +1266,27 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
                         ))}
                       </div>
 
+                      {/* Pipeline stages */}
+                      <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden", marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                        <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}`, fontSize: 12, fontWeight: 600, color: TEXT }}>Deal Pipeline</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 0 }}>
+                          {STAGES.map((stage, i) => {
+                            const count = sentEntries.filter(e => e.stage === stage).length;
+                            const sc = STAGE_COLORS[stage];
+                            return (
+                              <div key={stage} style={{ padding: "14px 12px", borderRight: i < STAGES.length - 1 ? `1px solid ${BORDER}` : "none", textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: sc.text }}>{count}</div>
+                                <div style={{ fontSize: 10, fontWeight: 600, color: sc.text, marginTop: 4, background: sc.bg, borderRadius: 20, padding: "2px 8px", display: "inline-block" }}>{stage}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                       {/* Category breakdown */}
                       <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", background: BG, borderBottom: `1px solid ${BORDER}`, padding: "10px 16px" }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.05em" }}>Category</div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.05em" }}>Org Type</div>
                           <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Total</div>
                           <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Sent</div>
                         </div>
@@ -1174,31 +1310,53 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
                   ) : (
                     /* Activity Log */
                     <div style={{ overflowX: "auto" }}>
-                      {/* Column headers */}
-                      <div style={{ display: "grid", gridTemplateColumns: "120px 130px 120px 1fr 1fr 90px 80px 90px", gap: 0, background: BG, border: `1px solid ${BORDER}`, borderBottom: "none", borderRadius: "10px 10px 0 0", padding: "10px 14px", minWidth: 900 }}>
-                        {["Organization", "Contact", "Title", "Email", "Subject", "Date Sent", "Status", "Follow-Up"].map((h, i) => (
+                      <div style={{ display: "grid", gridTemplateColumns: "140px 120px 80px 140px 80px 90px 100px 1fr", gap: 0, background: BG, border: `1px solid ${BORDER}`, borderBottom: "none", borderRadius: "10px 10px 0 0", padding: "10px 14px", minWidth: 960 }}>
+                        {["Organization", "Contact", "Rep", "Stage", "Status", "Date Sent", "Follow-Up", "Actions"].map((h, i) => (
                           <div key={i} style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</div>
                         ))}
                       </div>
-                      <div style={{ border: `1px solid ${BORDER}`, borderRadius: "0 0 10px 10px", overflow: "hidden", minWidth: 900 }}>
-                        {reportEntries.map((entry, i) => (
-                          <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "120px 130px 120px 1fr 1fr 90px 80px 90px", gap: 0, padding: "11px 14px", borderBottom: i < reportEntries.length - 1 ? `1px solid ${BORDER}` : "none", background: i % 2 === 0 ? SURFACE : "rgba(248,246,242,0.5)", alignItems: "center" }}>
-                            <div style={{ fontSize: 12, color: TEXT, fontWeight: 500, paddingRight: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entry.organization}>{entry.organization}</div>
-                            <div style={{ fontSize: 12, color: TEXT, paddingRight: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entry.contactName}>{entry.contactName}</div>
-                            <div style={{ fontSize: 11, color: TEXT_SECONDARY, paddingRight: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entry.title}>{entry.title}</div>
-                            <div style={{ fontSize: 11, color: INFO, paddingRight: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entry.email}>{entry.email}</div>
-                            <div style={{ fontSize: 11, color: TEXT_SECONDARY, paddingRight: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entry.subjectLine}>{entry.subjectLine}</div>
-                            <div style={{ fontSize: 11, color: TEXT_SECONDARY }}>{entry.dateSent || "—"}</div>
-                            <div>
-                              <span style={{
-                                fontSize: 10, padding: "3px 8px", borderRadius: 20, fontWeight: 600,
-                                background: entry.status === "Sent" ? "rgba(0,146,98,0.1)" : entry.status === "Fallback" ? "rgba(158,158,158,0.15)" : "rgba(20,118,216,0.1)",
-                                color: entry.status === "Sent" ? SUCCESS : entry.status === "Fallback" ? MUTED : INFO,
-                              }}>{entry.status}</span>
+                      <div style={{ border: `1px solid ${BORDER}`, borderRadius: "0 0 10px 10px", overflow: "hidden", minWidth: 960 }}>
+                        {reportEntries.map((entry, i) => {
+                          const overdue = isOverdue(entry);
+                          const sc = STAGE_COLORS[entry.stage] || STAGE_COLORS["Discovery"];
+                          return (
+                            <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "140px 120px 80px 140px 80px 90px 100px 1fr", gap: 0, padding: "10px 14px", borderBottom: i < reportEntries.length - 1 ? `1px solid ${BORDER}` : "none", background: overdue ? "rgba(253,75,35,0.03)" : i % 2 === 0 ? SURFACE : "rgba(248,246,242,0.5)", alignItems: "center" }}>
+                              <div>
+                                <div style={{ fontSize: 12, color: TEXT, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8 }} title={entry.organization}>{entry.organization}</div>
+                                <div style={{ fontSize: 10, color: TEXT_SECONDARY, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8 }} title={entry.contactName}>{entry.contactName}</div>
+                              </div>
+                              <div style={{ fontSize: 11, color: MUTED, paddingRight: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.repName || "—"}</div>
+                              <div style={{ paddingRight: 8 }}>
+                                <select
+                                  value={entry.stage}
+                                  onChange={ev => updateEntryStage(entry.id, ev.target.value as DealStage)}
+                                  style={{ fontSize: 11, fontWeight: 600, color: sc.text, background: sc.bg, border: "none", borderRadius: 20, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit", outline: "none", width: "100%" }}>
+                                  {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, fontWeight: 600, background: entry.status === "Sent" ? "rgba(0,146,98,0.1)" : entry.status === "Fallback" ? "rgba(158,158,158,0.15)" : "rgba(20,118,216,0.1)", color: entry.status === "Sent" ? SUCCESS : entry.status === "Fallback" ? MUTED : INFO }}>
+                                  {entry.status}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 11, color: TEXT_SECONDARY }}>{entry.dateSent || "—"}</div>
+                              <div style={{ fontSize: 11, color: overdue ? ACCENT : entry.followUpDue ? TEXT_SECONDARY : MUTED, fontWeight: overdue ? 600 : 400 }}>
+                                {overdue ? "⚠ Overdue" : entry.followUpSent ? "✓ Done" : entry.followUpDue || "—"}
+                              </div>
+                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                {overdue && (
+                                  <button
+                                    onClick={() => generateFollowUp(entry)}
+                                    disabled={generatingFollowUp === entry.id}
+                                    style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", background: generatingFollowUp === entry.id ? BORDER : ACCENT, color: generatingFollowUp === entry.id ? MUTED : "#fff", border: "none", borderRadius: 6, cursor: generatingFollowUp === entry.id ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                                    {generatingFollowUp === entry.id ? "Drafting…" : "Draft Follow-up"}
+                                  </button>
+                                )}
+                                {entry.followUpSent && <span style={{ fontSize: 10, color: SUCCESS }}>Follow-up sent</span>}
+                              </div>
                             </div>
-                            <div style={{ fontSize: 11, color: entry.followUpDue ? ACCENT : MUTED }}>{entry.followUpDue || "—"}</div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
