@@ -261,7 +261,7 @@ Return a concise style guide (3-5 sentences) that can be used to write future em
         <input
           value={repName}
           onChange={e => setRepName(e.target.value)}
-          placeholder="e.g. Darren"
+          placeholder="Your name"
           style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 14px", color: TEXT, fontFamily: "inherit", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 16 }}
         />
 
@@ -950,15 +950,15 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
             </div>
             <div style={{ fontSize: 11, fontWeight: 500, color: TEXT_SECONDARY, marginBottom: 5 }}>{batchMode ? "Starting Point" : "Organization Name"}</div>
             <input style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, padding: "9px 12px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box" }}
-              value={orgName} onChange={e => setOrgName(e.target.value)} placeholder={batchMode ? "e.g. DECA — we'll find 10 similar orgs" : "e.g. BPA, DECA, SkillsUSA"} />
+              value={orgName} onChange={e => setOrgName(e.target.value)} placeholder={batchMode ? "Starting org — we'll find 10 similar" : "Organization name"} />
             {!batchMode && (<>
               <div style={{ fontSize: 11, fontWeight: 500, color: TEXT_SECONDARY, marginBottom: 5, marginTop: 12 }}>Org Type <span style={{ color: MUTED, fontWeight: 400 }}>(optional)</span></div>
               <input style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, padding: "9px 12px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", boxSizing: "border-box" }}
-                value={orgType} onChange={e => setOrgType(e.target.value)} placeholder="e.g. Professional Association, Student Org…" />
+                value={orgType} onChange={e => setOrgType(e.target.value)} placeholder="Professional Association, Student Org…" />
             </>)}
             <div style={{ fontSize: 11, fontWeight: 500, color: TEXT_SECONDARY, marginBottom: 5, marginTop: 12 }}>Context <span style={{ color: MUTED, fontWeight: 400 }}>(optional)</span></div>
             <textarea style={{ width: "100%", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, padding: "9px 12px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", resize: "vertical", minHeight: 60, boxSizing: "border-box" }}
-              value={orgContext} onChange={e => setOrgContext(e.target.value)} placeholder={batchMode ? "e.g. Focus on orgs with large annual conferences…" : "e.g. Runs national conferences with 10k+ attendees..."} />
+              value={orgContext} onChange={e => setOrgContext(e.target.value)} placeholder={batchMode ? "Focus on orgs with large annual conferences…" : "Runs national conferences with 10k+ attendees..."} />
             <button onClick={handleRunClick} disabled={running || !orgName}
               style={{ width: "100%", padding: "12px", background: running || !orgName ? BORDER : ACCENT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: running || !orgName ? MUTED : "#fff", cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
               {running ? "Running…" : batchMode ? "Find 10 Orgs & Draft Emails" : styleProfile ? "Run Full Workflow" : "Set Up Style & Run"}
