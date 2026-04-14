@@ -19,8 +19,9 @@ const STYLE_KEY = "engine-agent-style-v2";
 const REPORT_KEY = "engine-agent-reports-v1";
 const WAVE_KEY = "engine-agent-wave-v1";
 
-const STAGES: DealStage[] = ["Discovery", "Proposal", "Contracted", "Closed Won", "Closed Lost"];
+const STAGES: DealStage[] = ["Prospecting", "Discovery", "Proposal", "Contracted", "Closed Won", "Closed Lost"];
 const STAGE_COLORS: Record<DealStage, { bg: string; text: string }> = {
+  "Prospecting": { bg: "rgba(158,158,158,0.12)", text: "#616368" },
   "Discovery":   { bg: "rgba(20,118,216,0.1)",  text: "#1476D8" },
   "Proposal":    { bg: "rgba(253,75,35,0.1)",   text: "#FD4B23" },
   "Contracted":  { bg: "rgba(0,146,98,0.1)",    text: "#009262" },
@@ -50,7 +51,7 @@ interface Draft {
   reportId?: string;
 }
 
-type DealStage = "Discovery" | "Proposal" | "Contracted" | "Closed Won" | "Closed Lost";
+type DealStage = "Prospecting" | "Discovery" | "Proposal" | "Contracted" | "Closed Won" | "Closed Lost";
 
 interface ReportEntry {
   id: string;
@@ -593,7 +594,7 @@ Return ONLY valid JSON: {"orgs":[{"name":"Full Org Name","type":"e.g. Profession
               subjectLine: subject,
               dateSent: null,
               status: contact.source === "Fallback" ? "Fallback" : "Pending",
-              stage: "Discovery" as DealStage,
+              stage: "Prospecting" as DealStage,
               followUpDue: null,
               followUpSent: false,
               notes: "",

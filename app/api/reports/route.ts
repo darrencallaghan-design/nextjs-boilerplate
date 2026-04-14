@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     subject_line: e.subjectLine || "",
     date_sent: e.dateSent || null,
     status: e.status || "Pending",
-    stage: e.stage || "Discovery",
+    stage: e.stage || "Prospecting",
     follow_up_due: e.followUpDue || null,
     follow_up_sent: e.followUpSent || false,
     notes: e.notes || "",
