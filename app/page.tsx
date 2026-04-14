@@ -86,18 +86,7 @@ function fallbackContacts(orgName: string): Contact[] {
 }
 
 function categorizeSmerf(orgType: string): string {
-  const t = (orgType || "").toLowerCase();
-  if (t.includes("student")) return "Educational - Student Org";
-  if (t.includes("youth nonprofit") || (t.includes("youth") && t.includes("nonprofit"))) return "Educational - Youth Nonprofit";
-  if (t.includes("youth")) return "Educational - Youth Nonprofit";
-  if (t.includes("education") || t.includes("academic") || t.includes("school") || t.includes("college") || t.includes("university")) return "Educational - Student Org";
-  if (t.includes("association")) return "Educational - Association";
-  if (t.includes("military") || t.includes("veteran") || t.includes("armed")) return "Military";
-  if (t.includes("religious") || t.includes("faith") || t.includes("church") || t.includes("mosque") || t.includes("synagogue")) return "Religious";
-  if (t.includes("fraternal") || t.includes("lodge") || t.includes("fraternity") || t.includes("sorority")) return "Fraternal";
-  if (t.includes("social") || t.includes("civic") || t.includes("rotary") || t.includes("lions") || t.includes("kiwanis")) return "Social";
-  if (t.includes("nonprofit") || t.includes("non-profit")) return "Educational - Youth Nonprofit";
-  return orgType || "Other";
+  return orgType?.trim() || "Unspecified";
 }
 
 function parseJSON(raw: string) {
