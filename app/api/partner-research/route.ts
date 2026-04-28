@@ -25,17 +25,15 @@ SMERF travel pattern: group room blocks for conventions, retreats, conferences, 
     ? `Rep's channel: ${segmentFocus}`
     : smerfContext;
 
-  const prompt = `You are a senior partnerships analyst at Engine. Research "${company}"${domainHint} thoroughly and build a complete partner brief.
+  const prompt = `You are a senior partnerships analyst at Engine. Research "${company}"${domainHint} and build a complete partner brief.
 
 ENGINE CONTEXT:
 Engine is a hotel booking platform for organizations. Partners earn 1% rev share on all bookings their members/employees make. Members save avg 22% vs rack rates. 3.5hr average hotel response time. Engine works best as an ongoing partnership — not a one-time deal.
 ${notes ? `\nREP NOTES (important context from the rep): ${notes}` : ""}
 SEGMENT CONTEXT: ${channelContext}
 
-SEARCH INSTRUCTIONS — run these 3 searches before synthesizing:
-1. Search: "${company}" overview members employees size locations website
-2. Search: "${company}" events conferences travel hotel partnerships programs member benefits
-3. Search: "${company}" recent news 2025 leadership growth partnerships vendor program
+SEARCH INSTRUCTIONS — run ONE comprehensive search:
+Search: "${company}" overview members employees events conferences travel hotel partnerships programs benefits 2025
 
 From your research, extract SPECIFIC details:
 — Actual event names and attendance numbers (not "runs large events" — say "hosts annual XYZ Conference, 3,000 attendees")
@@ -83,7 +81,7 @@ Return ONLY this JSON (no markdown, no explanation):
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 3000,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
           messages: [{ role: "user", content: prompt }],
         }),
       });
