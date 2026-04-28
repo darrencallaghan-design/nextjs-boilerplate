@@ -80,7 +80,7 @@ Return ONLY this JSON (no markdown, no explanation):
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 3000,
+          max_tokens: 5000,
           tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
           messages: [{ role: "user", content: prompt }],
         }),
