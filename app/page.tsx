@@ -968,9 +968,8 @@ export default function EngineAgent() {
           repName: styleProfile?.repName || "",
         }),
       });
-      if (!res.ok) throw new Error(`Error ${res.status}`);
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      if (!res.ok || data.error) throw new Error(data.error || `Error ${res.status}`);
       if (data.brief) {
         setPitchBrief(data.brief);
         const newId = saveBrief(data.brief, pitchCompany.trim(), pitchDomain.trim());

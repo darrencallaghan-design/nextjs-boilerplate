@@ -164,6 +164,7 @@ async function checkCrossbeam(company: string): Promise<{ partnerName: string; o
 export async function POST(req: NextRequest) {
   const { company, domain, notes, segmentFocus } = await req.json();
   if (!company?.trim()) return NextResponse.json({ error: "Company name required" }, { status: 400 });
+  if (!KEY()) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set — check Vercel environment variables" }, { status: 500 });
 
   try {
     const [rawBrief, ziData, cbSignals] = await Promise.all([
