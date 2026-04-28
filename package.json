@@ -9,9 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
-"next": "16.2.0",
+    "@supabase/supabase-js": "^2.103.0",
+    "docx": "^9.6.1",
+    "next": "16.2.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

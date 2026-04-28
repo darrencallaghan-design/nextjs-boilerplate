@@ -38,6 +38,10 @@ export async function POST(req: NextRequest) {
     stage: e.stage || "Prospecting",
     follow_up_due: e.followUpDue || null,
     follow_up_sent: e.followUpSent || false,
+    follow_up_2_due: e.followUp2Due || null,
+    follow_up_2_sent: e.followUp2Sent || false,
+    follow_up_3_due: e.followUp3Due || null,
+    follow_up_3_sent: e.followUp3Sent || false,
     notes: e.notes || "",
   }));
 
@@ -59,9 +63,13 @@ export async function PATCH(req: NextRequest) {
   if (updates.stage !== undefined) dbUpdates.stage = updates.stage;
   if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
   if (updates.followUpSent !== undefined) dbUpdates.follow_up_sent = updates.followUpSent;
+  if (updates.followUp2Sent !== undefined) dbUpdates.follow_up_2_sent = updates.followUp2Sent;
+  if (updates.followUp3Sent !== undefined) dbUpdates.follow_up_3_sent = updates.followUp3Sent;
   if (updates.status !== undefined) dbUpdates.status = updates.status;
   if (updates.dateSent !== undefined) dbUpdates.date_sent = updates.dateSent;
   if (updates.followUpDue !== undefined) dbUpdates.follow_up_due = updates.followUpDue;
+  if (updates.followUp2Due !== undefined) dbUpdates.follow_up_2_due = updates.followUp2Due;
+  if (updates.followUp3Due !== undefined) dbUpdates.follow_up_3_due = updates.followUp3Due;
 
   const { error } = await supabase
     .from("report_entries")

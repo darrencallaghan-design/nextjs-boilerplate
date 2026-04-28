@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Uses Claude's built-in web_search tool (Anthropic handles execution server-side).
-// Researches partnership fit signals — not just travel volume, but ongoing engagement,
-// member benefit potential, and natural intro paths for Engine.
+// Pro plan: serverless, 60s
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const { orgName, orgType, contactName, contactTitle, orgContext } = await req.json();
 
@@ -16,12 +16,12 @@ ${orgContext ? `Additional context: ${orgContext}` : ""}
 
 Find and report on:
 1. What events, conferences, or gatherings does ${orgName} run, and at what scale? (How many attendees, how often, which cities?)
-2. How do they engage with members or customers on an ongoing basis — not one-off? (Annual events, chapter meetings, newsletters, benefits programs, certification programs?)
-3. Do their members or customers have meaningful hotel travel tied to their work or participation? (Crews traveling for jobs, members attending conferences, reps visiting chapters?)
+2. How do they engage with members or customers on an ongoing basis? (Annual events, chapter meetings, benefits programs, certification programs?)
+3. Do their members or customers have meaningful hotel travel tied to their work or participation?
 4. Any recent news, new programs, leadership changes, or growth that makes this a timely moment to reach out?
-5. What would make this org a good or bad fit as an Engine partner — are they transactional or do they have repeat ongoing engagement?
+5. What would make this org a good or bad fit as an Engine partner?
 
-Write 4-6 specific, factual research notes using real details you found. No generic filler. These notes are for the rep writing the email — they do not appear in the email itself.`;
+Write 6-8 specific, factual research notes using real details you found. Be precise — name actual events, actual attendance numbers, actual cities, actual programs. No generic filler. Each note should contain at least one concrete fact the rep can reference in their outreach email.`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -32,9 +32,9 @@ Write 4-6 specific, factual research notes using real details you found. No gene
       "anthropic-beta": "web-search-2025-03-05",
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      model: "claude-sonnet-4-6",
+      max_tokens: 3000,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
       messages: [{ role: "user", content: userMessage }],
     }),
   });
