@@ -938,12 +938,15 @@ export default function EngineAgent() {
     setActiveBriefId(saved.id);
   };
 
+  const [pitchLoadingMsg, setPitchLoadingMsg] = useState("Researching…");
+
   const runPartnerResearch = async () => {
     if (!pitchCompany.trim()) return;
     setPitchLoading(true);
     setPitchBrief(null);
     setPitchError("");
     setActiveBriefId(null);
+    setPitchLoadingMsg("Researching…");
     try {
       const res = await fetch("/api/partner-research", {
         method: "POST",
@@ -957,15 +960,38 @@ export default function EngineAgent() {
         }),
       });
       if (!res.ok) throw new Error(`Error ${res.status}`);
-      const data = await res.json();
-      setPitchBrief(data.brief);
-      // Auto-save the brief
-      const newId = saveBrief(data.brief, pitchCompany.trim(), pitchDomain.trim());
-      setActiveBriefId(newId);
+
+      // Read NDJSON stream — keeps connection alive during long Anthropic call
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const msg = JSON.parse(line);
+            if (msg.status === "searching" && msg.message) {
+              setPitchLoadingMsg(msg.message);
+            } else if (msg.brief) {
+              setPitchBrief(msg.brief);
+              const newId = saveBrief(msg.brief, pitchCompany.trim(), pitchDomain.trim());
+              setActiveBriefId(newId);
+            } else if (msg.error) {
+              throw new Error(msg.error);
+            }
+          } catch (parseErr) { /* skip malformed lines */ }
+        }
+      }
     } catch (err) {
       setPitchError(String(err));
     } finally {
       setPitchLoading(false);
+      setPitchLoadingMsg("Researching…");
     }
   };
 
@@ -2336,7 +2362,7 @@ SUBJECT: Re: ${entry.subjectLine}
                 </div>
                 <button onClick={runPartnerResearch} disabled={pitchLoading || !pitchCompany.trim()}
                   style={{ width: "100%", padding: "10px", background: pitchLoading || !pitchCompany.trim() ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: pitchLoading || !pitchCompany.trim() ? MUTED : "#fff", cursor: pitchLoading || !pitchCompany.trim() ? "not-allowed" : "pointer" }}>
-                  {pitchLoading ? "Researching…" : "Build Partner Brief"}
+                  {pitchLoading ? pitchLoadingMsg : "Build Partner Brief"}
                 </button>
                 {pitchError && <div style={{ fontSize: 12, color: ERROR, background: "rgba(229,57,53,0.06)", border: `1px solid rgba(229,57,53,0.15)`, borderRadius: 6, padding: "8px 12px" }}>{pitchError}</div>}
               </div>
