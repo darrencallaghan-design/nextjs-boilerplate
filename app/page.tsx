@@ -946,7 +946,16 @@ export default function EngineAgent() {
     setPitchBrief(null);
     setPitchError("");
     setActiveBriefId(null);
-    setPitchLoadingMsg("Researching…");
+    setPitchLoadingMsg("Searching the web…");
+
+    // Client-side progress messages while we wait for the API
+    const steps = ["Searching the web…", "Analysing fit signals…", "Building pitch angles…", "Finalising brief…"];
+    let stepIdx = 0;
+    const progressTimer = setInterval(() => {
+      stepIdx = Math.min(stepIdx + 1, steps.length - 1);
+      setPitchLoadingMsg(steps[stepIdx]);
+    }, 8000);
+
     try {
       const res = await fetch("/api/partner-research", {
         method: "POST",
@@ -960,36 +969,17 @@ export default function EngineAgent() {
         }),
       });
       if (!res.ok) throw new Error(`Error ${res.status}`);
-
-      // Read NDJSON stream — keeps connection alive during long Anthropic call
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const msg = JSON.parse(line);
-            if (msg.status === "searching" && msg.message) {
-              setPitchLoadingMsg(msg.message);
-            } else if (msg.brief) {
-              setPitchBrief(msg.brief);
-              const newId = saveBrief(msg.brief, pitchCompany.trim(), pitchDomain.trim());
-              setActiveBriefId(newId);
-            } else if (msg.error) {
-              throw new Error(msg.error);
-            }
-          } catch (parseErr) { /* skip malformed lines */ }
-        }
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (data.brief) {
+        setPitchBrief(data.brief);
+        const newId = saveBrief(data.brief, pitchCompany.trim(), pitchDomain.trim());
+        setActiveBriefId(newId);
       }
     } catch (err) {
       setPitchError(String(err));
     } finally {
+      clearInterval(progressTimer);
       setPitchLoading(false);
       setPitchLoadingMsg("Researching…");
     }

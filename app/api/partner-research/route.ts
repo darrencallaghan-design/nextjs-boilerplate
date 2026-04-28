@@ -32,11 +32,10 @@ Engine is a hotel booking platform for organizations. Partners earn 1% rev share
 ${notes ? `\nREP NOTES (important context from the rep): ${notes}` : ""}
 SEGMENT CONTEXT: ${channelContext}
 
-SEARCH INSTRUCTIONS — run all 4 searches before synthesizing:
-1. Search: "${company}" overview members employees size locations
-2. Search: "${company}" events conferences travel hotel partnerships programs
-3. Search: "${company}" recent news 2024 2025 growth leadership partnerships
-4. Search: "${company}" vendor partner program member benefits
+SEARCH INSTRUCTIONS — run these 3 searches before synthesizing:
+1. Search: "${company}" overview members employees size locations website
+2. Search: "${company}" events conferences travel hotel partnerships programs member benefits
+3. Search: "${company}" recent news 2025 leadership growth partnerships vendor program
 
 From your research, extract SPECIFIC details:
 — Actual event names and attendance numbers (not "runs large events" — say "hosts annual XYZ Conference, 3,000 attendees")
@@ -71,7 +70,7 @@ TALKING POINTS — 4-6 specific, concrete points. Each should reference actual f
 Return ONLY this JSON (no markdown, no explanation):
 {"snapshot":{"name":"","industry":"","size":"","locations":"","description":"","website":""},"fitScore":0,"fitTier":"Potential","fitSignals":[],"distribution":{"networkType":"","networkSize":"","events":[],"programs":[]},"valueProps":[{"headline":"","bullets":[]}],"pitchAngles":[{"angle":"","why":"","openingLine":""}],"talkingPoints":[],"recentNews":[],"engineAngle":""}`;
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -83,14 +82,14 @@ Return ONLY this JSON (no markdown, no explanation):
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 5000,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
+          max_tokens: 3000,
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
           messages: [{ role: "user", content: prompt }],
         }),
       });
 
       if (res.status === 429) {
-        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
+        await new Promise(r => setTimeout(r, 3000));
         continue;
       }
       if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
@@ -100,8 +99,8 @@ Return ONLY this JSON (no markdown, no explanation):
         .map((b: { text: string }) => b.text)
         .join("\n");
     } catch (err) {
-      if (attempt === 2) throw err;
-      await new Promise(r => setTimeout(r, 1500));
+      if (attempt === 1) throw err;
+      await new Promise(r => setTimeout(r, 1000));
     }
   }
   throw new Error("Max retries exceeded");
@@ -162,101 +161,66 @@ async function checkCrossbeam(company: string): Promise<{ partnerName: string; o
   } catch { return []; }
 }
 
-// ─── Route handler (streaming to prevent browser timeout) ────────────────────
-// Sends progress pings every 5s while research runs, then the full brief.
-// Client reads NDJSON lines: {"status":"searching"} ... {"brief":{...}}
+// ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const { company, domain, notes, segmentFocus } = await req.json();
   if (!company?.trim()) return NextResponse.json({ error: "Company name required" }, { status: 400 });
 
-  const encoder = new TextEncoder();
+  try {
+    const [rawBrief, ziData, cbSignals] = await Promise.all([
+      researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
+      enrichZoomInfo(company.trim()),
+      checkCrossbeam(company.trim()),
+    ]);
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (obj: object) => {
-        try { controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n")); } catch { /* closed */ }
-      };
-
-      // Heartbeat every 5s so browser doesn't timeout during long Anthropic call
-      const steps = ["Searching the web…", "Analyzing fit signals…", "Building pitch angles…", "Finalising brief…"];
-      let stepIdx = 0;
-      const heartbeat = setInterval(() => {
-        send({ status: "searching", message: steps[Math.min(stepIdx++, steps.length - 1)] });
-      }, 5000);
-
-      try {
-        const [rawBrief, ziData, cbSignals] = await Promise.all([
-          researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
-          enrichZoomInfo(company.trim()),
-          checkCrossbeam(company.trim()),
-        ]);
-
-        clearInterval(heartbeat);
-
-        const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          send({
-            brief: {
-              companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 300), website: domain || "" },
-              partnershipFit: { score: 0, tier: "Potential", signals: ["Research complete — see description"] },
-              distributionPower: { networkSize: "Unknown", networkType: "Unknown", events: [], existingPrograms: [] },
-              engineValueProps: [], pitchAngles: [], talkingPoints: [],
-              crossbeamSignals: cbSignals, recentNews: [], engineAngle: rawBrief.slice(0, 500),
-            }
-          });
-          controller.close();
-          return;
+    const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return NextResponse.json({
+        brief: {
+          companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 300), website: domain || "" },
+          partnershipFit: { score: 0, tier: "Potential", signals: ["Research complete — see description"] },
+          distributionPower: { networkSize: "Unknown", networkType: "Unknown", events: [], existingPrograms: [] },
+          engineValueProps: [], pitchAngles: [], talkingPoints: [],
+          crossbeamSignals: cbSignals, recentNews: [], engineAngle: rawBrief.slice(0, 500),
         }
-
-        const parsed = JSON.parse(jsonMatch[0]);
-        const snapshot = {
-          name: String(ziData?.name || parsed.snapshot?.name || company),
-          industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
-          size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String(parsed.snapshot?.size || ""),
-          locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String(parsed.snapshot?.locations || ""),
-          description: String(ziData?.description || parsed.snapshot?.description || ""),
-          website: String(ziData?.website || parsed.snapshot?.website || domain || ""),
-        };
-
-        send({
-          brief: {
-            companySnapshot: snapshot,
-            partnershipFit: {
-              score: Number(parsed.fitScore || 0),
-              tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low",
-              signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [],
-            },
-            distributionPower: {
-              networkSize: String(parsed.distribution?.networkSize || "Unknown"),
-              networkType: String(parsed.distribution?.networkType || "Unknown"),
-              events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [],
-              existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [],
-            },
-            engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [],
-            pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [],
-            talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
-            crossbeamSignals: cbSignals,
-            recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [],
-            engineAngle: String(parsed.engineAngle || ""),
-          }
-        });
-        controller.close();
-      } catch (err) {
-        clearInterval(heartbeat);
-        console.error("Partner research error:", err);
-        send({ error: String(err) });
-        controller.close();
-      }
+      });
     }
-  });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "application/x-ndjson",
-      "Transfer-Encoding": "chunked",
-      "Cache-Control": "no-cache",
-      "X-Accel-Buffering": "no",
-    },
-  });
+    const parsed = JSON.parse(jsonMatch[0]);
+    const snapshot = {
+      name: String(ziData?.name || parsed.snapshot?.name || company),
+      industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
+      size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String(parsed.snapshot?.size || ""),
+      locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String(parsed.snapshot?.locations || ""),
+      description: String(ziData?.description || parsed.snapshot?.description || ""),
+      website: String(ziData?.website || parsed.snapshot?.website || domain || ""),
+    };
+
+    return NextResponse.json({
+      brief: {
+        companySnapshot: snapshot,
+        partnershipFit: {
+          score: Number(parsed.fitScore || 0),
+          tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low",
+          signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [],
+        },
+        distributionPower: {
+          networkSize: String(parsed.distribution?.networkSize || "Unknown"),
+          networkType: String(parsed.distribution?.networkType || "Unknown"),
+          events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [],
+          existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [],
+        },
+        engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [],
+        pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [],
+        talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
+        crossbeamSignals: cbSignals,
+        recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [],
+        engineAngle: String(parsed.engineAngle || ""),
+      }
+    });
+  } catch (err) {
+    console.error("Partner research error:", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 }
