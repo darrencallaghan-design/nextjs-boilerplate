@@ -957,17 +957,30 @@ export default function EngineAgent() {
     }, 8000);
 
     try {
-      const res = await fetch("/api/partner-research", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          company: pitchCompany.trim(),
-          domain: pitchDomain.trim(),
-          notes: pitchNotes.trim(),
-          segmentFocus: styleProfile?.segmentFocus || "",
-          repName: styleProfile?.repName || "",
-        }),
-      });
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => abortController.abort(), 58000);
+      let res: Response;
+      try {
+        res = await fetch("/api/partner-research", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            company: pitchCompany.trim(),
+            domain: pitchDomain.trim(),
+            notes: pitchNotes.trim(),
+            segmentFocus: styleProfile?.segmentFocus || "",
+            repName: styleProfile?.repName || "",
+          }),
+          signal: abortController.signal,
+        });
+      } catch (fetchErr) {
+        const isTimeout = (fetchErr as Error).name === "AbortError";
+        throw new Error(isTimeout
+          ? "Research is taking longer than usual — please try again"
+          : String(fetchErr));
+      } finally {
+        clearTimeout(timeoutId);
+      }
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || `Error ${res.status}`);
       if (data.brief) {
