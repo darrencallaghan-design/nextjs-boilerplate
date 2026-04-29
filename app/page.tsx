@@ -1312,7 +1312,7 @@ export default function EngineAgent() {
             const contactsRes = await fetch("/api/contacts", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ orgName: org.name, orgType: org.type, domain: org.domain || "" }),
+              body: JSON.stringify({ orgName: org.name, orgType: org.type, domain: (org as { name: string; type: string; domain?: string }).domain || "" }),
             });
             if (contactsRes.ok) {
               const contactsData = await contactsRes.json();
