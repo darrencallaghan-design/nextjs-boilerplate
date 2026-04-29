@@ -32,7 +32,9 @@ Engine is a hotel booking platform for organizations. Partners earn 1% rev share
 ${notes ? `\nREP NOTES (important context from the rep): ${notes}` : ""}
 SEGMENT CONTEXT: ${channelContext}
 
-Using your knowledge, extract SPECIFIC details:
+Search: "${company}" overview members employees events conferences travel hotel partnerships 2025
+
+From your research, extract SPECIFIC details:
 — Actual event names and attendance numbers (not "runs large events" — say "hosts annual XYZ Conference, 3,000 attendees")
 — Actual member/customer count or size indicator
 — Named existing vendor/partner programs if any
@@ -73,10 +75,12 @@ Return ONLY this JSON (no markdown, no explanation):
           "Content-Type": "application/json",
           "x-api-key": KEY(),
           "anthropic-version": "2023-06-01",
+          "anthropic-beta": "web-search-2025-03-05",
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 5000,
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
           messages: [{ role: "user", content: prompt }],
         }),
       });
