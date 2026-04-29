@@ -983,12 +983,11 @@ export default function EngineAgent() {
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const msg = JSON.parse(line.slice(6));
-              if (msg.brief || msg.error) { data = msg; } // skip keepalives like {"k":1}
-            } catch { /* skip malformed */ }
-          }
+          if (!line.trim()) continue;
+          try {
+            const msg = JSON.parse(line);
+            if (msg.brief || msg.error) { data = msg; } // skip keepalives {}
+          } catch { /* skip malformed lines */ }
         }
         if (data) break; // got the result, stop reading
       }

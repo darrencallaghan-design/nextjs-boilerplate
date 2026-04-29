@@ -179,13 +179,13 @@ export async function POST(req: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
-      // Send keepalive ping every 5s — valid JSON so nothing chokes on it
+      // Send keepalive ping every 5s — bare JSON line, no SSE prefix
       const ping = setInterval(() => {
-        try { controller.enqueue(encoder.encode("data: {\"k\":1}\n\n")); } catch { /* closed */ }
+        try { controller.enqueue(encoder.encode("{}\n")); } catch { /* closed */ }
       }, 5000);
 
       const send = (obj: object) => {
-        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); } catch { /* closed */ }
+        try { controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n")); } catch { /* closed */ }
       };
 
       try {
