@@ -179,9 +179,9 @@ export async function POST(req: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
-      // Send keepalive ping every 5s — resets any proxy/edge idle timeout
+      // Send keepalive ping every 5s — valid JSON so nothing chokes on it
       const ping = setInterval(() => {
-        try { controller.enqueue(encoder.encode(": ping\n\n")); } catch { /* closed */ }
+        try { controller.enqueue(encoder.encode("data: {\"k\":1}\n\n")); } catch { /* closed */ }
       }, 5000);
 
       const send = (obj: object) => {

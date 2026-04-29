@@ -984,7 +984,10 @@ export default function EngineAgent() {
         buffer = lines.pop() ?? "";
         for (const line of lines) {
           if (line.startsWith("data: ")) {
-            try { data = JSON.parse(line.slice(6)); } catch { /* skip malformed */ }
+            try {
+              const msg = JSON.parse(line.slice(6));
+              if (msg.brief || msg.error) { data = msg; } // skip keepalives like {"k":1}
+            } catch { /* skip malformed */ }
           }
         }
         if (data) break; // got the result, stop reading
