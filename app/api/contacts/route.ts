@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Pro plan: serverless, 90s — two full Sonnet passes, 12 searches total
+// Pro plan: serverless, 90s
 export const maxDuration = 90;
 
 async function callAnthropic(body: object, retries = 2): Promise<Response> {
@@ -31,43 +31,66 @@ async function callAnthropic(body: object, retries = 2): Promise<Response> {
 }
 
 export async function POST(req: NextRequest) {
-  const { orgName, orgType } = await req.json();
+  const { orgName, orgType, domain } = await req.json();
 
-  // ── PASS 1: Find people + grab any emails visible in snippets (~20s) ──────────
+  const domainClean = (domain || "").replace(/https?:\/\//i, "").replace(/\/.*$/, "").trim();
+
+  // ── PASS 1: Find real people from the website first, then other sources ────────
+  const websiteSearches = domainClean ? `
+SEARCH 1 (MOST IMPORTANT): site:${domainClean}
+Visit the website directly. Check these specific pages in order:
+- ${domainClean}/staff
+- ${domainClean}/our-staff
+- ${domainClean}/team
+- ${domainClean}/leadership
+- ${domainClean}/about
+- ${domainClean}/people
+- ${domainClean}/contact
+Extract EVERY person's name, title, and email address you find. People listed here are CONFIRMED current staff. Prefer these over any other source.
+
+SEARCH 2: site:rocketreach.co "${orgName}"
+Read EVERY snippet carefully — full email addresses (e.g. jsmith@org.com) are often embedded in the preview text without clicking through.
+
+SEARCH 3: "${orgName}" "${domainClean}" staff email contact director
+Find any emails in press releases, bios, or news articles.
+
+SEARCH 4: site:projects.propublica.org/nonprofits "${orgName}"
+990 filings list executive directors and officers with names and titles.
+
+CRITICAL RULE: Only return people who are CONFIRMED to be at this org right now. People found on ${domainClean} directly are most reliable. Do NOT return people found only in old articles from 3+ years ago unless confirmed still there.`
+  : `
+SEARCH 1: "${orgName}" staff team leadership official website
+Visit the official website. Check /staff, /about, /team, /leadership, /people pages. Extract all names, titles, and emails (mailto: links or @domain addresses).
+
+SEARCH 2: site:rocketreach.co "${orgName}"
+Read EVERY snippet carefully — full email addresses often appear in preview text.
+
+SEARCH 3: site:projects.propublica.org/nonprofits "${orgName}"
+990 filings list executive directors and officers.
+
+SEARCH 4: "${orgName}" executive director president CEO email contact
+Look for emails in press releases, conference bios, speaker pages.`;
+
   const pass1 = await callAnthropic({
     model: "claude-sonnet-4-6",
     max_tokens: 2000,
-    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 }],
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
     messages: [{
       role: "user",
-      content: `Find the 2-3 most senior decision-maker contacts at "${orgName}" (${orgType}) who would own vendor or partnership relationships.
+      content: `Find the 2-3 most senior decision-maker contacts at "${orgName}" (${orgType || "organization"}) who would own vendor or partnership relationships.
+${domainClean ? `\nThe organization's website is: ${domainClean} — START HERE. People on the website are ground truth.` : ""}
 
-Run these searches in order:
-
-SEARCH 1: site:rocketreach.co "${orgName}"
-READ EVERY SNIPPET carefully — RocketReach snippets frequently embed the full email address (e.g. cferrell@skillsusa.org) in the Google preview text without needing to click through. Extract every email address you can see in the snippets.
-
-SEARCH 2: "${orgName}" staff team leadership site:.org OR site:.com
-Visit the official website. Check /staff, /about, /team, /leadership, /people, /contact pages. Extract all names, titles, and any email addresses (mailto: links or @domain addresses).
-
-SEARCH 3: site:projects.propublica.org/nonprofits "${orgName}"
-990 filings list executive directors and officers. Note names and titles.
-
-SEARCH 4: "${orgName}" executive director president CEO email contact
-Look for emails in press releases, conference bios, speaker pages, news articles.
-
-SEARCH 5: site:rocketreach.co "${orgName}" director president CEO
-More RocketReach profiles — again read snippets for embedded emails.
+${websiteSearches}
 
 Priority titles (in order): Executive Director, CEO, President, VP Partnerships, Director Business Development, VP Member Services, Director of Events, COO, Director of Operations.
 
-Return ONLY valid JSON:
-{"people":[{"name":"Full Name","title":"Exact Title","email":"found@email.com or empty string","domain":"orgdomain.org","source":"Website|RocketReach|Press Release|ProPublica|empty"}]}`
+Return ONLY valid JSON — do not include anyone with name "Unknown":
+{"people":[{"name":"Full Name","title":"Exact Title","email":"found@email.com or empty string","domain":"${domainClean || "orgdomain.org"}","source":"Website|RocketReach|Press Release|ProPublica"}]}`
     }],
   });
 
   let people: { name: string; title: string; email: string; domain: string; source: string }[] = [];
-  let confirmedDomain = "";
+  let confirmedDomain = domainClean;
 
   if (pass1.ok) {
     const d1 = await pass1.json();
@@ -77,14 +100,14 @@ Return ONLY valid JSON:
       try {
         const parsed = JSON.parse(m1[0]);
         people = (parsed.people || []).filter((p: { name?: string }) => p.name && p.name.trim() && p.name !== "Unknown").slice(0, 3);
-        confirmedDomain = people.find(p => p.domain)?.domain || "";
+        if (!confirmedDomain) confirmedDomain = people.find(p => p.domain)?.domain || "";
       } catch { /* fall through */ }
     }
   }
 
   if (!people.length) return NextResponse.json({ contacts: [] });
 
-  // ── PASS 2: Enrich missing emails — pattern mine + verify (~20s) ─────────────
+  // ── PASS 2: Enrich missing emails — pattern mine + verify ─────────────────────
   const needsEmail = people.filter(p => !p.email);
   const hasEmail = people.filter(p => p.email);
 
@@ -95,8 +118,8 @@ Return ONLY valid JSON:
 
     const pass2 = await callAnthropic({
       model: "claude-sonnet-4-6",
-      max_tokens: 2000,
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 6 }],
+      max_tokens: 1500,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
       messages: [{
         role: "user",
         content: `I need email addresses for these contacts at "${orgName}" (domain: ${confirmedDomain || "unknown"}):
@@ -104,33 +127,23 @@ ${needsEmail.map(p => `- ${p.name}, ${p.title}`).join("\n")}
 
 ${knownPattern}
 
-Run these searches:
-
-SEARCH 1: ${needsEmail.map(p => `"${p.name}" "${orgName}"`).join(" OR ")} email
-Look for their emails in press releases, event pages, bios, news.
+SEARCH 1: ${domainClean ? `site:${domainClean}` : `"${orgName}" staff`} email OR contact OR mailto
+${domainClean ? `Directly visit ${domainClean}/contact, ${domainClean}/staff to find any email addresses shown.` : "Visit their website contact/staff page for emails."}
 
 SEARCH 2: site:rocketreach.co ${needsEmail.map(p => `"${p.name}"`).join(" OR ")}
-Read snippets — full emails often appear in the preview text.
+Read snippets — full emails often appear in preview text.
 
 SEARCH 3: "${orgName}" email format ${confirmedDomain ? `"@${confirmedDomain}"` : "contact staff"}
-Find the org's email pattern. Any email at their domain reveals the format for all contacts.
+Any email at their domain reveals the format for constructing others.
 
-SEARCH 4: ${needsEmail.map(p => `"${p.name}" email`).slice(0, 2).join(" OR ")} ${orgName}
-Direct name searches in directories and professional sites.
-
-SEARCH 5: site:zoominfo.com "${orgName}" ${needsEmail[0]?.name || ""}
-ZoomInfo shows partial emails like "j***@org.com" — extract the first letter + domain to reconstruct.
-
-EMAIL CONSTRUCTION RULES (apply after all searches):
+EMAIL CONSTRUCTION RULES:
 ${hasEmail.length > 0
   ? `You have confirmed emails: ${hasEmail.map(p => p.email).join(", ")}. Apply the EXACT same format (firstname.lastname@, flastname@, firstname@, etc.) to construct emails for the missing people.`
-  : `If you find any email at this domain, extract the pattern and construct emails for all contacts. If no pattern found, use firstname.lastname@${confirmedDomain || `${orgName.toLowerCase().replace(/[^a-z0-9]/g, "")}.org`}`}
+  : `If you find any email at this domain, extract the pattern and apply it. If nothing found, use firstname.lastname@${confirmedDomain || `${orgName.toLowerCase().replace(/[^a-z0-9]/g, "")}.org`}`}
 
-For constructed emails: emailVerified: false, source: "Pattern-${confirmedDomain || "domain"}"
-For guessed with no domain found: emailVerified: false, source: "Predicted"
-For found on a real page: emailVerified: true, source: "Website" or "RocketReach" or "Press Release"
-
-VERIFICATION: For each email you construct, do a quick search for that exact email address in quotes. If it appears on any webpage, mark emailVerified: true, source: "Verified".
+- emailVerified: true ONLY if the email was actually found on a real webpage
+- emailVerified: false for any email you constructed or guessed
+- source: "Website" if found on their site, "RocketReach" if from there, "Pattern-domain" if constructed
 
 Return ONLY valid JSON:
 {"enriched":[{"name":"Full Name","email":"email@domain.com","emailVerified":false,"source":"Pattern-domain.org"}]}`

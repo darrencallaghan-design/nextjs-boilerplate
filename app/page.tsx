@@ -1312,7 +1312,7 @@ export default function EngineAgent() {
             const contactsRes = await fetch("/api/contacts", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ orgName: org.name, orgType: org.type }),
+              body: JSON.stringify({ orgName: org.name, orgType: org.type, domain: org.domain || "" }),
             });
             if (contactsRes.ok) {
               const contactsData = await contactsRes.json();
@@ -1475,18 +1475,29 @@ export default function EngineAgent() {
       }
 
       if (finalContacts.length === 0) {
-        const genRaw = await callClaude([{
-          role: "user",
-          content: `Generate 3 realistic decision-maker contacts for "${orgName}" (${orgType}). ${orgContext ? "Context: " + orgContext : ""}
-Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","company":"${orgName}","email":"email@domain.org"}]}`
-        }]);
-        const gp = parseJSON(genRaw);
-        if (gp) {
-          const tries = [gp?.contacts, gp?.data?.contacts, gp?.results];
-          for (const t of tries) {
-            if (Array.isArray(t) && t.length > 0) { finalContacts = t; break; }
+        // Try web search contacts (reads actual website staff pages) before generating fake ones
+        try {
+          addLog("Searching website and web sources for real contacts…", "info");
+          const urlMatch = orgContext.match(/(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+          const extractedDomain = urlMatch ? urlMatch[1] : "";
+          const webContactsRes = await fetch("/api/contacts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orgName, orgType, domain: extractedDomain }),
+          });
+          if (webContactsRes.ok) {
+            const webData = await webContactsRes.json();
+            if (webData.contacts?.length > 0) {
+              finalContacts = webData.contacts;
+              addLog(`✓ Found ${finalContacts.length} contacts from website/web search`, "ok");
+            }
           }
+        } catch (webErr) {
+          addLog("Web contact search failed: " + (webErr as Error).message, "err");
         }
+      }
+
+      if (finalContacts.length === 0) {
         if (!finalContacts.length) finalContacts = fallbackContacts(orgName);
         finalContacts = finalContacts.slice(0, 3).map((c: Partial<Contact>) => ({
           name: c?.name || "Unknown", title: c?.title || "Director",
