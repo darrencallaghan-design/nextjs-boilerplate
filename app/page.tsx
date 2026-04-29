@@ -957,35 +957,45 @@ export default function EngineAgent() {
     }, 8000);
 
     try {
-      const abortController = new AbortController();
-      const timeoutId = setTimeout(() => abortController.abort(), 58000);
-      let res: Response;
-      try {
-        res = await fetch("/api/partner-research", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            company: pitchCompany.trim(),
-            domain: pitchDomain.trim(),
-            notes: pitchNotes.trim(),
-            segmentFocus: styleProfile?.segmentFocus || "",
-            repName: styleProfile?.repName || "",
-          }),
-          signal: abortController.signal,
-        });
-      } catch (fetchErr) {
-        const isTimeout = (fetchErr as Error).name === "AbortError";
-        throw new Error(isTimeout
-          ? "Research is taking longer than usual — please try again"
-          : String(fetchErr));
-      } finally {
-        clearTimeout(timeoutId);
+      const res = await fetch("/api/partner-research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company: pitchCompany.trim(),
+          domain: pitchDomain.trim(),
+          notes: pitchNotes.trim(),
+          segmentFocus: styleProfile?.segmentFocus || "",
+          repName: styleProfile?.repName || "",
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
+
+      // Read SSE stream — server sends ": ping" keepalives then "data: {...}" result
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let data: { brief?: unknown; error?: string } | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try { data = JSON.parse(line.slice(6)); } catch { /* skip malformed */ }
+          }
+        }
+        if (data) break; // got the result, stop reading
       }
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || `Error ${res.status}`);
+
+      if (!data) throw new Error("No response received");
+      if (data.error) throw new Error(data.error);
       if (data.brief) {
-        setPitchBrief(data.brief);
-        const newId = saveBrief(data.brief, pitchCompany.trim(), pitchDomain.trim());
+        const brief = data.brief as PitchBrief;
+        setPitchBrief(brief);
+        const newId = saveBrief(brief, pitchCompany.trim(), pitchDomain.trim());
         setActiveBriefId(newId);
       }
     } catch (err) {

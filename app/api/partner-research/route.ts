@@ -158,67 +158,104 @@ async function checkCrossbeam(company: string): Promise<{ partnerName: string; o
   } catch { return []; }
 }
 
-// ─── Route handler ────────────────────────────────────────────────────────────
+// ─── Route handler — SSE streaming keeps connection alive indefinitely ────────
+// Uses text/event-stream so Vercel's edge never buffers or times out.
+// Keepalive comments (": ping") sent every 5s. Result sent as "data: {...}".
+// Client reads lines and parses the data line when it arrives.
 
 export async function POST(req: NextRequest) {
   const { company, domain, notes, segmentFocus } = await req.json();
-  if (!company?.trim()) return NextResponse.json({ error: "Company name required" }, { status: 400 });
-  if (!KEY()) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set — check Vercel environment variables" }, { status: 500 });
 
-  try {
-    const [rawBrief, ziData, cbSignals] = await Promise.all([
-      researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
-      enrichZoomInfo(company.trim()),
-      checkCrossbeam(company.trim()),
-    ]);
+  const encoder = new TextEncoder();
 
-    const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return NextResponse.json({
-        brief: {
-          companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 300), website: domain || "" },
-          partnershipFit: { score: 0, tier: "Potential", signals: ["Research complete — see description"] },
-          distributionPower: { networkSize: "Unknown", networkType: "Unknown", events: [], existingPrograms: [] },
-          engineValueProps: [], pitchAngles: [], talkingPoints: [],
-          crossbeamSignals: cbSignals, recentNews: [], engineAngle: rawBrief.slice(0, 500),
-        }
-      });
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    const snapshot = {
-      name: String(ziData?.name || parsed.snapshot?.name || company),
-      industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
-      size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String(parsed.snapshot?.size || ""),
-      locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String(parsed.snapshot?.locations || ""),
-      description: String(ziData?.description || parsed.snapshot?.description || ""),
-      website: String(ziData?.website || parsed.snapshot?.website || domain || ""),
-    };
-
-    return NextResponse.json({
-      brief: {
-        companySnapshot: snapshot,
-        partnershipFit: {
-          score: Number(parsed.fitScore || 0),
-          tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low",
-          signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [],
-        },
-        distributionPower: {
-          networkSize: String(parsed.distribution?.networkSize || "Unknown"),
-          networkType: String(parsed.distribution?.networkType || "Unknown"),
-          events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [],
-          existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [],
-        },
-        engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [],
-        pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [],
-        talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
-        crossbeamSignals: cbSignals,
-        recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [],
-        engineAngle: String(parsed.engineAngle || ""),
-      }
-    });
-  } catch (err) {
-    console.error("Partner research error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+  if (!company?.trim()) {
+    const stream = new ReadableStream({ start(c) { c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "Company name required" })}\n\n`)); c.close(); } });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" } });
   }
+  if (!KEY()) {
+    const stream = new ReadableStream({ start(c) { c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "ANTHROPIC_API_KEY not set" })}\n\n`)); c.close(); } });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" } });
+  }
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      // Send keepalive ping every 5s — resets any proxy/edge idle timeout
+      const ping = setInterval(() => {
+        try { controller.enqueue(encoder.encode(": ping\n\n")); } catch { /* closed */ }
+      }, 5000);
+
+      const send = (obj: object) => {
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`)); } catch { /* closed */ }
+      };
+
+      try {
+        const [rawBrief, ziData, cbSignals] = await Promise.all([
+          researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
+          enrichZoomInfo(company.trim()),
+          checkCrossbeam(company.trim()),
+        ]);
+
+        clearInterval(ping);
+
+        const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          send({ brief: {
+            companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 300), website: domain || "" },
+            partnershipFit: { score: 0, tier: "Potential", signals: ["Research complete — see description"] },
+            distributionPower: { networkSize: "Unknown", networkType: "Unknown", events: [], existingPrograms: [] },
+            engineValueProps: [], pitchAngles: [], talkingPoints: [],
+            crossbeamSignals: cbSignals, recentNews: [], engineAngle: rawBrief.slice(0, 500),
+          }});
+          controller.close();
+          return;
+        }
+
+        const parsed = JSON.parse(jsonMatch[0]);
+        const snapshot = {
+          name: String(ziData?.name || parsed.snapshot?.name || company),
+          industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
+          size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String(parsed.snapshot?.size || ""),
+          locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String(parsed.snapshot?.locations || ""),
+          description: String(ziData?.description || parsed.snapshot?.description || ""),
+          website: String(ziData?.website || parsed.snapshot?.website || domain || ""),
+        };
+
+        send({ brief: {
+          companySnapshot: snapshot,
+          partnershipFit: {
+            score: Number(parsed.fitScore || 0),
+            tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low",
+            signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [],
+          },
+          distributionPower: {
+            networkSize: String(parsed.distribution?.networkSize || "Unknown"),
+            networkType: String(parsed.distribution?.networkType || "Unknown"),
+            events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [],
+            existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [],
+          },
+          engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [],
+          pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [],
+          talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
+          crossbeamSignals: cbSignals,
+          recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [],
+          engineAngle: String(parsed.engineAngle || ""),
+        }});
+        controller.close();
+      } catch (err) {
+        clearInterval(ping);
+        console.error("Partner research error:", err);
+        send({ error: String(err) });
+        controller.close();
+      }
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no",
+      "Connection": "keep-alive",
+    },
+  });
 }
