@@ -968,31 +968,8 @@ export default function EngineAgent() {
           repName: styleProfile?.repName || "",
         }),
       });
-      if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
-
-      // Read SSE stream — server sends ": ping" keepalives then "data: {...}" result
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let data: { brief?: unknown; error?: string } | null = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const msg = JSON.parse(line);
-            if (msg.brief || msg.error) { data = msg; } // skip keepalives {}
-          } catch { /* skip malformed lines */ }
-        }
-        if (data) break; // got the result, stop reading
-      }
-
-      if (!data) throw new Error("No response received");
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      const data = await res.json();
       if (data.error) throw new Error(data.error);
       if (data.brief) {
         const brief = data.brief as PitchBrief;

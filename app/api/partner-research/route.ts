@@ -1,71 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Pro plan: serverless, 120s — full web search + Sonnet scoring
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const KEY = () => process.env.ANTHROPIC_API_KEY || "";
 
-// ─── Single combined research + synthesis call ────────────────────────────────
-// Runs web search AND outputs structured JSON in one Anthropic call.
-// This is the core optimisation — 1 call instead of 3.
-
-async function researchAndSynthesize(
-  company: string,
-  domain: string,
-  notes: string,
-  segmentFocus: string
-): Promise<string> {
+async function researchAndSynthesize(company: string, domain: string, notes: string, segmentFocus: string): Promise<string> {
   const domainHint = domain ? ` (${domain})` : "";
+  const smerfContext = `SMERF org (alumni, civic, veterans, Greek life, faith orgs, unions, membership societies, school travel, nonprofit conferences)`;
+  const channelContext = segmentFocus && segmentFocus.toLowerCase() !== "smerf" ? `Channel focus: ${segmentFocus}` : smerfContext;
 
-  const smerfContext = `SMERF channel (Social · Military · Educational · Religious · Fraternal).
-SMERF orgs: alumni associations, civic groups, veterans orgs, Greek life, faith-based orgs, unions, membership societies, school/university travel programs, nonprofit conferences, mission/retreat groups.
-SMERF travel pattern: group room blocks for conventions, retreats, conferences, reunions, seminars, mission trips — consistent year-round including off-peak. Budget-conscious but loyal.`;
+  // Engine partnership scoring rubric included inline
+  const prompt = `Search for "${company}"${domainHint} then output a SINGLE LINE of minified JSON (no spaces, no newlines, no markdown, no explanation).
 
-  const channelContext = segmentFocus && segmentFocus.toLowerCase() !== "smerf"
-    ? `Rep's channel: ${segmentFocus}`
-    : smerfContext;
+Engine=hotel booking platform for orgs, 1% rev share, 22% member hotel savings. ${channelContext}.${notes ? ` Rep notes: ${notes}` : ""}
 
-  const prompt = `You are a senior partnerships analyst at Engine. Research "${company}"${domainHint} and build a complete partner brief.
+Score 0-100: +20 member network 200+, +15 recurring travel events/conferences, +15 SMERF/channel match, +15 work-tied or member travel, +10 existing vendor/member benefits program, +10 national footprint, +5 mission-value fit. Deduct -15 consumer-only org, -10 only occasional travel. Strong>=65, Potential>=35, Low<35.
 
-ENGINE CONTEXT:
-Engine is a hotel booking platform for organizations. Partners earn 1% rev share on all bookings their members/employees make. Members save avg 22% vs rack rates. 3.5hr average hotel response time. Engine works best as an ongoing partnership — not a one-time deal.
-${notes ? `\nREP NOTES (important context from the rep): ${notes}` : ""}
-SEGMENT CONTEXT: ${channelContext}
+Use real specifics from search: actual event names, member counts, named programs, real cities. Strings max 15 words each.
 
-Search: "${company}" overview members employees events conferences travel hotel partnerships 2025
-
-From your research, extract SPECIFIC details:
-— Actual event names and attendance numbers (not "runs large events" — say "hosts annual XYZ Conference, 3,000 attendees")
-— Actual member/customer count or size indicator
-— Named existing vendor/partner programs if any
-— Real cities or regions they operate in
-— Any specific travel patterns (crews on job sites, members at conferences, reps visiting chapters)
-— Anything timely: leadership change, new program launch, funding, growth news
-
-SCORING — evaluate all four Engine partner criteria:
-1. REPEAT ENGAGEMENT: Does this org have ongoing trusted relationships with members/customers? (not transactional one-off)
-2. HIGH TRAVEL VOLUME: Do their people travel regularly and consistently for work or gatherings?
-3. REVENUE MOTIVATED: Would they actively promote Engine for rev share, OR use it to cut their own travel costs?
-4. VALUE MULTIPLIER: Does Engine genuinely make their members more successful — not just a referral fee?
-
-fitScore 0-100:
-+20 member/constituent network (200+ people they actively serve)
-+15 runs recurring group travel events (conferences, conventions, retreats, tournaments, seminars)
-+15 SMERF match (Social/Military/Educational/Religious/Fraternal) OR Engine channel match (Sports, Construction, Transportation, Industrial, Weddings)
-+15 travel is recurring and work/gathering-tied — not occasional
-+10 existing vendor or partner program (shows they monetize relationships)
-+10 national or multi-regional footprint
-+5 strong value multiplier (Engine clearly helps their members succeed)
--15 purely consumer/retail with no member-serving or B2B model
--10 travel is occasional or one-off only
-fitTier: Strong≥65, Potential≥35, Low<35
-
-PITCH ANGLES — for each angle provide a specific opening line the rep could actually say or write. Make it reference something real you found.
-
-TALKING POINTS — 4-6 specific, concrete points. Each should reference actual facts about this org (event name, member count, a recent news item). No generic bullets.
-
-Return ONLY this JSON (no markdown, no explanation):
-{"snapshot":{"name":"","industry":"","size":"","locations":"","description":"","website":""},"fitScore":0,"fitTier":"Potential","fitSignals":[],"distribution":{"networkType":"","networkSize":"","events":[],"programs":[]},"valueProps":[{"headline":"","bullets":[]}],"pitchAngles":[{"angle":"","why":"","openingLine":""}],"talkingPoints":[],"recentNews":[],"engineAngle":""}`;
+Output ONLY this JSON minified on one line (fill in the empty strings and numbers with real data):
+{"snapshot":{"name":"","industry":"","size":"","locations":"","description":"","website":""},"fitScore":0,"fitTier":"Potential","fitSignals":["s1","s2","s3"],"distribution":{"networkType":"","networkSize":"","events":["e1","e2"],"programs":["p1","p2"]},"valueProps":[{"headline":"","bullets":["b1","b2"]},{"headline":"","bullets":["b1","b2"]}],"pitchAngles":[{"angle":"","why":"","openingLine":""},{"angle":"","why":"","openingLine":""}],"talkingPoints":["t1","t2","t3","t4"],"recentNews":[{"headline":"","date":""}],"engineAngle":""}`;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -78,25 +32,27 @@ Return ONLY this JSON (no markdown, no explanation):
           "anthropic-beta": "web-search-2025-03-05",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 5000,
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 1000,
           tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
           messages: [{ role: "user", content: prompt }],
         }),
       });
-
-      if (res.status === 429) {
-        await new Promise(r => setTimeout(r, 3000));
-        continue;
-      }
+      if (res.status === 429) { await new Promise(r => setTimeout(r, 2000)); continue; }
       if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
       const data = await res.json();
-      const textBlocks: string[] = (data.content || [])
-        .filter((b: { type: string }) => b.type === "text")
-        .map((b: { text: string }) => b.text);
-      // With web search, Claude emits multiple text blocks (narration before search,
-      // JSON after). Always take the LAST text block — it contains the JSON output.
-      return textBlocks[textBlocks.length - 1] || textBlocks.join("\n") || "";
+      // Web search responses have multiple content blocks; find the text block with the JSON
+      const blocks: { type: string; text?: string }[] = data.content || [];
+      const textBlocks = blocks.filter(b => b.type === "text" && b.text);
+      // Find the block containing the JSON brief (scan in reverse for the final text block)
+      for (const block of [...textBlocks].reverse()) {
+        const t = block.text || "";
+        if (t.includes('"fitScore"') || t.includes('"snapshot"') || t.includes('"fitTier"')) {
+          return t;
+        }
+      }
+      // Fallback: return all text joined
+      return textBlocks.map(b => b.text).join("\n");
     } catch (err) {
       if (attempt === 1) throw err;
       await new Promise(r => setTimeout(r, 1000));
@@ -105,29 +61,14 @@ Return ONLY this JSON (no markdown, no explanation):
   throw new Error("Max retries exceeded");
 }
 
-// ─── ZoomInfo enrichment (optional, fast) ────────────────────────────────────
-
 async function enrichZoomInfo(company: string): Promise<Record<string, unknown> | null> {
   const mcpUrl = process.env.ZOOMINFO_MCP_URL;
   if (!mcpUrl) return null;
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": KEY(),
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "mcp-client-2025-04-04",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 600,
-        mcp_servers: [{
-          type: "url", url: mcpUrl, name: "zoominfo",
-          ...(process.env.ZOOMINFO_MCP_API_KEY ? { authorization_token: process.env.ZOOMINFO_MCP_API_KEY } : {}),
-        }],
-        messages: [{ role: "user", content: `Use enrich_companies to look up "${company}". Return ONLY JSON: {name, industry, employeeCount, revenueRange, numberOfLocations, description, hqCity, hqState, website}` }],
-      }),
+      headers: { "Content-Type": "application/json", "x-api-key": KEY(), "anthropic-version": "2023-06-01", "anthropic-beta": "mcp-client-2025-04-04" },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 600, mcp_servers: [{ type: "url", url: mcpUrl, name: "zoominfo", ...(process.env.ZOOMINFO_MCP_API_KEY ? { authorization_token: process.env.ZOOMINFO_MCP_API_KEY } : {}) }], messages: [{ role: "user", content: `Use enrich_companies to look up "${company}". Return ONLY JSON: {name,industry,employeeCount,numberOfLocations,description,website}` }] }),
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -136,8 +77,6 @@ async function enrichZoomInfo(company: string): Promise<Record<string, unknown> 
     return m ? JSON.parse(m[0]) : null;
   } catch { return null; }
 }
-
-// ─── Crossbeam overlap (optional, fast) ──────────────────────────────────────
 
 async function checkCrossbeam(company: string): Promise<{ partnerName: string; overlapType: string }[]> {
   const cbKey = process.env.CROSSBEAM_API_KEY;
@@ -153,125 +92,39 @@ async function checkCrossbeam(company: string): Promise<{ partnerName: string; o
     const accounts = aData.items || aData.data || [];
     if (!accounts.length) return [];
     const overlaps: string[] = accounts[0]?.partner_overlaps?.map((o: { partner_uuid: string }) => o.partner_uuid) || [];
-    return overlaps.slice(0, 3).map((uuid: string) => ({
-      partnerName: partners.find(p => p.uuid === uuid)?.name || "Engine Partner",
-      overlapType: "Account overlap — warm path available",
-    }));
+    return overlaps.slice(0, 3).map((uuid: string) => ({ partnerName: partners.find(p => p.uuid === uuid)?.name || "Engine Partner", overlapType: "Account overlap — warm path available" }));
   } catch { return []; }
 }
 
-// ─── Route handler — SSE streaming keeps connection alive indefinitely ────────
-// Uses text/event-stream so Vercel's edge never buffers or times out.
-// Keepalive comments (": ping") sent every 5s. Result sent as "data: {...}".
-// Client reads lines and parses the data line when it arrives.
-
 export async function POST(req: NextRequest) {
-  const { company, domain, notes, segmentFocus } = await req.json();
+  try {
+    const { company, domain, notes, segmentFocus } = await req.json();
+    if (!company?.trim()) return NextResponse.json({ error: "Company name required" }, { status: 400 });
+    if (!KEY()) return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });
 
-  const encoder = new TextEncoder();
+    const [rawBrief, ziData, cbSignals] = await Promise.all([
+      researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
+      enrichZoomInfo(company.trim()),
+      checkCrossbeam(company.trim()),
+    ]);
 
-  if (!company?.trim()) {
-    const stream = new ReadableStream({ start(c) { c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "Company name required" })}\n\n`)); c.close(); } });
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" } });
-  }
-  if (!KEY()) {
-    const stream = new ReadableStream({ start(c) { c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "ANTHROPIC_API_KEY not set" })}\n\n`)); c.close(); } });
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" } });
-  }
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      // Send keepalive ping every 5s — bare JSON line, no SSE prefix
-      const ping = setInterval(() => {
-        try { controller.enqueue(encoder.encode("{}\n")); } catch { /* closed */ }
-      }, 5000);
-
-      const send = (obj: object) => {
-        try { controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n")); } catch { /* closed */ }
-      };
-
-      try {
-        const [rawBrief, ziData, cbSignals] = await Promise.all([
-          researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
-          enrichZoomInfo(company.trim()),
-          checkCrossbeam(company.trim()),
-        ]);
-
-        clearInterval(ping);
-
-        // Find the JSON object: scan from the first '{' and walk backwards from the
-        // last '}' until JSON.parse succeeds. This handles prose before the JSON block.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let parsed: any = null;
-        const firstBrace = rawBrief.indexOf("{");
-        if (firstBrace !== -1) {
-          const candidate = rawBrief.slice(firstBrace);
-          let end = candidate.lastIndexOf("}");
-          while (end > 0) {
-            try {
-              parsed = JSON.parse(candidate.slice(0, end + 1));
-              break;
-            } catch {
-              end = candidate.lastIndexOf("}", end - 1);
-            }
-          }
-        }
-        if (!parsed) {
-          send({ brief: {
-            companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 300), website: domain || "" },
-            partnershipFit: { score: 0, tier: "Potential", signals: ["Research complete — see description"] },
-            distributionPower: { networkSize: "Unknown", networkType: "Unknown", events: [], existingPrograms: [] },
-            engineValueProps: [], pitchAngles: [], talkingPoints: [],
-            crossbeamSignals: cbSignals, recentNews: [], engineAngle: rawBrief.slice(0, 500),
-          }});
-          controller.close();
-          return;
-        }
-        const snapshot = {
-          name: String(ziData?.name || parsed.snapshot?.name || company),
-          industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
-          size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String(parsed.snapshot?.size || ""),
-          locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String(parsed.snapshot?.locations || ""),
-          description: String(ziData?.description || parsed.snapshot?.description || ""),
-          website: String(ziData?.website || parsed.snapshot?.website || domain || ""),
-        };
-
-        send({ brief: {
-          companySnapshot: snapshot,
-          partnershipFit: {
-            score: Number(parsed.fitScore || 0),
-            tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low",
-            signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [],
-          },
-          distributionPower: {
-            networkSize: String(parsed.distribution?.networkSize || "Unknown"),
-            networkType: String(parsed.distribution?.networkType || "Unknown"),
-            events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [],
-            existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [],
-          },
-          engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [],
-          pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [],
-          talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
-          crossbeamSignals: cbSignals,
-          recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [],
-          engineAngle: String(parsed.engineAngle || ""),
-        }});
-        controller.close();
-      } catch (err) {
-        clearInterval(ping);
-        console.error("Partner research error:", err);
-        send({ error: String(err) });
-        controller.close();
-      }
+    const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return NextResponse.json({ brief: { companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 200), website: domain || "" }, partnershipFit: { score: 0, tier: "Potential" as const, signals: [] }, distributionPower: { networkSize: "Unknown", networkType: "Unknown", events: [], existingPrograms: [] }, engineValueProps: [], pitchAngles: [], talkingPoints: [], crossbeamSignals: cbSignals, recentNews: [], engineAngle: "" } });
     }
-  });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "X-Accel-Buffering": "no",
-      "Connection": "keep-alive",
-    },
-  });
+    const parsed = JSON.parse(jsonMatch[0]);
+    const snapshot = {
+      name: String(ziData?.name || parsed.snapshot?.name || company),
+      industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
+      size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String(parsed.snapshot?.size || ""),
+      locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String(parsed.snapshot?.locations || ""),
+      description: String(ziData?.description || parsed.snapshot?.description || ""),
+      website: String(ziData?.website || parsed.snapshot?.website || domain || ""),
+    };
+
+    return NextResponse.json({ brief: { companySnapshot: snapshot, partnershipFit: { score: Number(parsed.fitScore || 0), tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low", signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [] }, distributionPower: { networkSize: String(parsed.distribution?.networkSize || "Unknown"), networkType: String(parsed.distribution?.networkType || "Unknown"), events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [], existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [] }, engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [], pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [], talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [], crossbeamSignals: cbSignals, recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [], engineAngle: String(parsed.engineAngle || "") } });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
 }
