@@ -91,10 +91,12 @@ Return ONLY this JSON (no markdown, no explanation):
       }
       if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
       const data = await res.json();
-      return (data.content || [])
+      const textBlocks: string[] = (data.content || [])
         .filter((b: { type: string }) => b.type === "text")
-        .map((b: { text: string }) => b.text)
-        .join("\n");
+        .map((b: { text: string }) => b.text);
+      // With web search, Claude emits multiple text blocks (narration before search,
+      // JSON after). Always take the LAST text block — it contains the JSON output.
+      return textBlocks[textBlocks.length - 1] || textBlocks.join("\n") || "";
     } catch (err) {
       if (attempt === 1) throw err;
       await new Promise(r => setTimeout(r, 1000));
@@ -197,8 +199,24 @@ export async function POST(req: NextRequest) {
 
         clearInterval(ping);
 
-        const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
+        // Find the JSON object: scan from the first '{' and walk backwards from the
+        // last '}' until JSON.parse succeeds. This handles prose before the JSON block.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let parsed: any = null;
+        const firstBrace = rawBrief.indexOf("{");
+        if (firstBrace !== -1) {
+          const candidate = rawBrief.slice(firstBrace);
+          let end = candidate.lastIndexOf("}");
+          while (end > 0) {
+            try {
+              parsed = JSON.parse(candidate.slice(0, end + 1));
+              break;
+            } catch {
+              end = candidate.lastIndexOf("}", end - 1);
+            }
+          }
+        }
+        if (!parsed) {
           send({ brief: {
             companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 300), website: domain || "" },
             partnershipFit: { score: 0, tier: "Potential", signals: ["Research complete — see description"] },
@@ -209,8 +227,6 @@ export async function POST(req: NextRequest) {
           controller.close();
           return;
         }
-
-        const parsed = JSON.parse(jsonMatch[0]);
         const snapshot = {
           name: String(ziData?.name || parsed.snapshot?.name || company),
           industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
