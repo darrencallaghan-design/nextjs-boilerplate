@@ -166,60 +166,90 @@ export async function POST(req: NextRequest) {
   if (!company?.trim()) return NextResponse.json({ error: "Company name required" }, { status: 400 });
   if (!KEY()) return NextResponse.json({ error: "ANTHROPIC_API_KEY is not set — check Vercel environment variables" }, { status: 500 });
 
-  try {
-    const [rawBrief, ziData, cbSignals] = await Promise.all([
-      researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
-      enrichZoomInfo(company.trim()),
-      checkCrossbeam(company.trim()),
-    ]);
+  // ── Keepalive stream ─────────────────────────────────────────────────────────
+  // Browser connections drop after ~60s with no data. We stream newline bytes
+  // every 5s to keep the connection alive. JSON.parse ignores leading whitespace
+  // so the client's res.json() call works unchanged.
+  const encoder = new TextEncoder();
 
-    const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return NextResponse.json({
-        brief: {
-          companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 300), website: domain || "" },
-          partnershipFit: { score: 0, tier: "Potential", signals: ["Research complete — see description"] },
-          distributionPower: { networkSize: "Unknown", networkType: "Unknown", events: [], existingPrograms: [] },
-          engineValueProps: [], pitchAngles: [], talkingPoints: [],
-          crossbeamSignals: cbSignals, recentNews: [], engineAngle: rawBrief.slice(0, 500),
+  const stream = new ReadableStream({
+    async start(controller) {
+      const keepalive = setInterval(() => {
+        try { controller.enqueue(encoder.encode("\n")); } catch { /* closed */ }
+      }, 5000);
+
+      try {
+        const [rawBrief, ziData, cbSignals] = await Promise.all([
+          researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
+          enrichZoomInfo(company.trim()),
+          checkCrossbeam(company.trim()),
+        ]);
+
+        clearInterval(keepalive);
+
+        const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          controller.enqueue(encoder.encode(JSON.stringify({
+            brief: {
+              companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 300), website: domain || "" },
+              partnershipFit: { score: 0, tier: "Potential", signals: ["Research complete — see description"] },
+              distributionPower: { networkSize: "Unknown", networkType: "Unknown", events: [], existingPrograms: [] },
+              engineValueProps: [], pitchAngles: [], talkingPoints: [],
+              crossbeamSignals: cbSignals, recentNews: [], engineAngle: rawBrief.slice(0, 500),
+            }
+          })));
+          controller.close();
+          return;
         }
-      });
-    }
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    const snapshot = {
-      name: String(ziData?.name || parsed.snapshot?.name || company),
-      industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
-      size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String(parsed.snapshot?.size || ""),
-      locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String(parsed.snapshot?.locations || ""),
-      description: String(ziData?.description || parsed.snapshot?.description || ""),
-      website: String(ziData?.website || parsed.snapshot?.website || domain || ""),
-    };
+        const parsed = JSON.parse(jsonMatch[0]);
+        const snapshot = {
+          name: String(ziData?.name || parsed.snapshot?.name || company),
+          industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
+          size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String(parsed.snapshot?.size || ""),
+          locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String(parsed.snapshot?.locations || ""),
+          description: String(ziData?.description || parsed.snapshot?.description || ""),
+          website: String(ziData?.website || parsed.snapshot?.website || domain || ""),
+        };
 
-    return NextResponse.json({
-      brief: {
-        companySnapshot: snapshot,
-        partnershipFit: {
-          score: Number(parsed.fitScore || 0),
-          tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low",
-          signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [],
-        },
-        distributionPower: {
-          networkSize: String(parsed.distribution?.networkSize || "Unknown"),
-          networkType: String(parsed.distribution?.networkType || "Unknown"),
-          events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [],
-          existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [],
-        },
-        engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [],
-        pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [],
-        talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
-        crossbeamSignals: cbSignals,
-        recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [],
-        engineAngle: String(parsed.engineAngle || ""),
+        controller.enqueue(encoder.encode(JSON.stringify({
+          brief: {
+            companySnapshot: snapshot,
+            partnershipFit: {
+              score: Number(parsed.fitScore || 0),
+              tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low",
+              signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [],
+            },
+            distributionPower: {
+              networkSize: String(parsed.distribution?.networkSize || "Unknown"),
+              networkType: String(parsed.distribution?.networkType || "Unknown"),
+              events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [],
+              existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [],
+            },
+            engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [],
+            pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [],
+            talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
+            crossbeamSignals: cbSignals,
+            recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [],
+            engineAngle: String(parsed.engineAngle || ""),
+          }
+        })));
+        controller.close();
+      } catch (err) {
+        clearInterval(keepalive);
+        console.error("Partner research error:", err);
+        controller.enqueue(encoder.encode(JSON.stringify({ error: String(err) })));
+        controller.close();
       }
-    });
-  } catch (err) {
-    console.error("Partner research error:", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
+    }
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
