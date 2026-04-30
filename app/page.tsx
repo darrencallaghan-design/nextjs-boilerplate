@@ -921,6 +921,152 @@ export default function EngineAgent() {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
+  // ── ONE-PAGER EXPORT ─────────────────────────────────────────────────────
+  const exportOnePager = (brief: PitchBrief) => {
+    const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+    const tierColor = brief.partnershipFit.tier === "Strong" ? "#009262" : brief.partnershipFit.tier === "Potential" ? "#1476D8" : "#9E9E9E";
+    const tierBg    = brief.partnershipFit.tier === "Strong" ? "rgba(0,146,98,0.1)" : brief.partnershipFit.tier === "Potential" ? "rgba(20,118,216,0.1)" : "rgba(158,158,158,0.1)";
+
+    // Parse network size string → number
+    const parseNet = (s: string): number => {
+      if (!s || s === "Unknown") return 10000;
+      const c = s.replace(/,/g, "").toUpperCase();
+      const m = c.match(/([\d.]+)\s*(K|M|B)?/);
+      if (!m) return 10000;
+      let n = parseFloat(m[1]);
+      if (m[2] === "K") n *= 1_000;
+      if (m[2] === "M") n *= 1_000_000;
+      if (m[2] === "B") n *= 1_000_000_000;
+      return Math.round(n);
+    };
+
+    // Format currency
+    const fmt = (n: number) => n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${Math.round(n / 1000)}K` : `$${n}`;
+    const fmtN = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `~${Math.round(n / 1000)}K` : `${n}`;
+
+    const net = parseNet(brief.distributionPower.networkSize);
+    const avgBooking = 650;
+    const engineTake = 0.05;
+    const revShare   = 0.30;
+
+    const trips = [
+      Math.max(200,  Math.round(net * 0.005)),
+      Math.max(1000, Math.round(net * 0.02)),
+      Math.max(5000, Math.round(net * 0.05)),
+    ];
+    const scenarios = [
+      { label: "Year 1 — Early adoption", trips: trips[0] },
+      { label: "Year 2 — Scaled rollout",  trips: trips[1] },
+      { label: "Full potential",            trips: trips[2] },
+    ].map(s => ({
+      label: s.label,
+      tripsLabel: `~${fmtN(s.trips)} trips`,
+      spend:      fmt(s.trips * avgBooking),
+      engineRev:  fmt(s.trips * avgBooking * engineTake),
+      partnerRev: fmt(s.trips * avgBooking * engineTake * revShare),
+    }));
+
+    const signalRows = brief.partnershipFit.signals.slice(0, 6)
+      .map(s => `<div class="sig-row"><span class="chk">✓</span><span>${s}</span></div>`).join("");
+
+    const vpRows = brief.engineValueProps.slice(0, 3).map(vp =>
+      `<div class="vp-block">
+        <div class="vp-head">${vp.headline}</div>
+        ${vp.bullets.slice(0, 3).map(b => `<div class="bul"><span class="dot">•</span>${b}</div>`).join("")}
+      </div>`).join("");
+
+    const dealRows = scenarios.map((s, i) =>
+      `<tr class="${i % 2 === 0 ? "even" : "odd"}${i === scenarios.length - 1 ? " last" : ""}">
+        <td class="td-l">${s.label}</td>
+        <td>${s.tripsLabel}</td>
+        <td>${s.spend}</td>
+        <td>${s.engineRev}</td>
+        <td>${s.partnerRev}</td>
+      </tr>`).join("");
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${brief.companySnapshot.name} — Engine One-Pager</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size: 10.5pt; color: #10121A; background: #fff; }
+  .page { max-width: 750px; margin: 0 auto; padding: 40px 52px; }
+  .hdr { display:flex; justify-content:space-between; align-items:flex-end; padding-bottom:8px; border-bottom: 1.5px solid #FD4B23; margin-bottom:22px; }
+  .hdr-brand { font-size:10pt; }
+  .hdr-brand .eng { color:#FD4B23; font-weight:700; }
+  .hdr-brand .sub { color:#777; }
+  .hdr-right { font-size:8.5pt; color:#777; }
+  .co-name { font-size:26pt; font-weight:700; letter-spacing:-0.02em; margin-bottom:3px; }
+  .co-meta { font-size:9.5pt; color:#616368; margin-bottom:10px; }
+  .tier-row { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .tier-badge { font-size:9.5pt; font-weight:700; padding:3px 13px; border-radius:12px; }
+  .tier-score { font-size:9.5pt; color:#777; }
+  .sec-title { font-size:8pt; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color:#10121A; border-bottom:1px solid #E0E0E0; padding-bottom:4px; margin-bottom:9px; margin-top:18px; }
+  .about { font-size:10pt; line-height:1.6; color:#10121A; margin-bottom:4px; }
+  .sig-row { display:flex; gap:8px; margin-bottom:4px; font-size:10pt; line-height:1.5; }
+  .chk { color:#FD4B23; flex-shrink:0; font-weight:700; }
+  .vp-block { margin-bottom:9px; }
+  .vp-head { font-size:10.5pt; font-weight:700; color:#FD4B23; margin-bottom:3px; }
+  .bul { display:flex; gap:7px; font-size:10pt; line-height:1.5; margin-bottom:2px; }
+  .dot { color:#FD4B23; flex-shrink:0; }
+  .deal-intro { font-size:9pt; color:#777; font-style:italic; margin-bottom:8px; }
+  table { width:100%; border-collapse:collapse; font-size:8.5pt; margin-top:4px; }
+  th { background:#10121A; color:#fff; font-weight:700; padding:6px 8px; text-align:center; }
+  th:first-child { text-align:left; }
+  td { padding:5px 8px; border-bottom:1px solid #E8E5E0; text-align:center; }
+  td.td-l { text-align:left; }
+  tr.even td { background:#fff; }
+  tr.odd td { background:#F9F9F9; }
+  tr.last td { background:#FFF0EC; font-weight:700; }
+  .engine-angle { font-size:10pt; line-height:1.6; color:#10121A; }
+  .footer { display:flex; justify-content:flex-end; border-top:1px solid #E0E0E0; padding-top:8px; margin-top:24px; font-size:8pt; color:#777; }
+  .print-btn { position:fixed; bottom:24px; right:24px; background:#FD4B23; color:#fff; border:none; border-radius:8px; padding:11px 22px; font-family:Arial,sans-serif; font-size:13px; font-weight:700; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.15); }
+  @media print { .print-btn { display:none; } body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } @page { margin:0.55in; size:letter; } }
+</style></head><body>
+<button class="print-btn" onclick="window.print()">Save as PDF</button>
+<div class="page">
+  <div class="hdr">
+    <div class="hdr-brand"><span class="eng">Engine</span><span class="sub"> Partner One-Pager</span></div>
+    <div class="hdr-right">${today} · Confidential</div>
+  </div>
+
+  <div class="co-name">${brief.companySnapshot.name}</div>
+  <div class="co-meta">${[brief.companySnapshot.industry, brief.companySnapshot.size, brief.companySnapshot.locations].filter(Boolean).join("  ·  ")}</div>
+  <div class="tier-row">
+    <span class="tier-badge" style="color:${tierColor};background:${tierBg}">${brief.partnershipFit.tier} Partner Fit</span>
+    <span class="tier-score">Score: ${brief.partnershipFit.score}/100</span>
+  </div>
+
+  ${brief.companySnapshot.description ? `<div class="sec-title">About</div><div class="about">${brief.companySnapshot.description}</div>` : ""}
+
+  <div class="sec-title">Partnership Signals</div>
+  ${signalRows}
+
+  <div class="sec-title">Engine Value Props — Tailored</div>
+  ${vpRows}
+
+  <div class="sec-title">Deal Size Estimate</div>
+  <div class="deal-intro">Estimated based on ${brief.distributionPower.networkSize || "network size"} at 0.5%–5% booking penetration · $650 avg booking · 5% Engine take rate · 30% partner rev share</div>
+  <table>
+    <thead><tr>
+      <th>Scenario</th><th>Annual Bookings</th><th>Gross Spend</th><th>Engine Revenue</th><th>Partner Rev Share</th>
+    </tr></thead>
+    <tbody>${dealRows}</tbody>
+  </table>
+
+  ${brief.engineAngle ? `<div class="sec-title">Engine Angle</div><div class="engine-angle">${brief.engineAngle}</div>` : ""}
+
+  <div class="footer">Engine · Confidential</div>
+</div>
+</body></html>`;
+
+    const blob = new Blob([html], { type: "text/html" });
+    const url  = URL.createObjectURL(blob);
+    const win  = window.open(url, "_blank");
+    if (win) win.focus();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+  // ── END ONE-PAGER ─────────────────────────────────────────────────────────
+
   const deleteBrief = (id: string) => {
     setSavedBriefs(prev => {
       const updated = prev.filter(b => b.id !== id);
@@ -2470,6 +2616,11 @@ SUBJECT: Re: ${entry.subjectLine}
                         onClick={() => exportBriefPDF(pitchBrief)}
                         style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 12, fontWeight: 600, color: "#fff", cursor: "pointer", marginTop: 4 }}>
                         ⬇ Download PDF
+                      </button>
+                      <button
+                        onClick={() => exportOnePager(pitchBrief)}
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", background: "transparent", border: `1.5px solid ${ACCENT}`, borderRadius: 8, fontFamily: "inherit", fontSize: 12, fontWeight: 600, color: ACCENT, cursor: "pointer" }}>
+                        📄 One-Pager
                       </button>
                     </div>
                   </div>
