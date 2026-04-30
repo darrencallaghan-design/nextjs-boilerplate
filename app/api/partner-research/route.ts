@@ -1,25 +1,62 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 
 export const maxDuration = 300;
 
 const KEY = () => process.env.ANTHROPIC_API_KEY || "";
 
+// ─── In-memory job store ─────────────────────────────────────────────────────
+// after() keeps the serverless instance alive after the response is sent.
+// Polls from the same instance will find the result here.
+
+type JobStatus = { status: "processing" | "done" | "error"; brief?: object; error?: string; created: number };
+const jobStore = new Map<string, JobStatus>();
+
+function cleanupJobs() {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  for (const [id, job] of jobStore.entries()) {
+    if (job.created < cutoff) jobStore.delete(id);
+  }
+}
+
+// ─── Research function (the full-quality original prompt) ────────────────────
+
 async function researchAndSynthesize(company: string, domain: string, notes: string, segmentFocus: string): Promise<string> {
   const domainHint = domain ? ` (${domain})` : "";
-  const smerfContext = `SMERF org (alumni, civic, veterans, Greek life, faith orgs, unions, membership societies, school travel, nonprofit conferences)`;
-  const channelContext = segmentFocus && segmentFocus.toLowerCase() !== "smerf" ? `Channel focus: ${segmentFocus}` : smerfContext;
 
-  // Engine partnership scoring rubric included inline
-  const prompt = `Search for "${company}"${domainHint} then output a SINGLE LINE of minified JSON (no spaces, no newlines, no markdown, no explanation).
+  const smerfContext = `SMERF channel (Social · Military · Educational · Religious · Fraternal).
+SMERF orgs: alumni associations, civic groups, veterans orgs, Greek life, faith-based orgs, unions, membership societies, school/university travel programs, nonprofit conferences, mission/retreat groups.
+SMERF travel pattern: group room blocks for conventions, retreats, conferences, reunions, seminars, mission trips — consistent year-round including off-peak. Budget-conscious but loyal.`;
 
-Engine=hotel booking platform for orgs, 1% rev share, 22% member hotel savings. ${channelContext}.${notes ? ` Rep notes: ${notes}` : ""}
+  const channelContext = segmentFocus && segmentFocus.toLowerCase() !== "smerf"
+    ? `Rep's channel: ${segmentFocus}`
+    : smerfContext;
 
-Score 0-100: +20 member network 200+, +15 recurring travel events/conferences, +15 SMERF/channel match, +15 work-tied or member travel, +10 existing vendor/member benefits program, +10 national footprint, +5 mission-value fit. Deduct -15 consumer-only org, -10 only occasional travel. Strong>=65, Potential>=35, Low<35.
+  const prompt = `You are a senior partnerships analyst at Engine. Research "${company}"${domainHint} thoroughly and build a complete partner brief.
 
-Use real specifics from search: actual event names, member counts, named programs, real cities. Strings max 15 words each.
+ENGINE CONTEXT:
+Engine = hotel booking for organizations. 1% rev share for partners. Members save 22% on hotels. SMERF focus.
+${notes ? `\nREP NOTES: ${notes}` : ""}
+SEGMENT CONTEXT: ${channelContext}
 
-Output ONLY this JSON minified on one line (fill in the empty strings and numbers with real data):
-{"snapshot":{"name":"","industry":"","size":"","locations":"","description":"","website":""},"fitScore":0,"fitTier":"Potential","fitSignals":["s1","s2","s3"],"distribution":{"networkType":"","networkSize":"","events":["e1","e2"],"programs":["p1","p2"]},"valueProps":[{"headline":"","bullets":["b1","b2"]},{"headline":"","bullets":["b1","b2"]}],"pitchAngles":[{"angle":"","why":"","openingLine":""},{"angle":"","why":"","openingLine":""}],"talkingPoints":["t1","t2","t3","t4"],"recentNews":[{"headline":"","date":""}],"engineAngle":""}`;
+Search then extract: actual event names + attendance, member count, existing programs, real cities, travel patterns, recent 2024-25 news.
+
+Fit score 0-100:
++20 member network 200+
++15 recurring travel events
++15 SMERF match
++15 work-tied travel
++10 existing partner program
++10 national footprint
++5 value fit
+-15 consumer-only
+-10 occasional travel only
+Strong>=65, Potential>=35, Low<35
+
+Pitch angles must reference real facts. Talking points must use specific data (event names, numbers).
+
+Return ONLY valid JSON (no markdown, no explanation):
+{"snapshot":{"name":"","industry":"","size":"","locations":"","description":"","website":""},"fitScore":0,"fitTier":"Potential","fitSignals":["specific signal","signal 2","signal 3","signal 4"],"distribution":{"networkType":"","networkSize":"","events":["Event, City, attendees","Event 2","Event 3"],"programs":["Program","Program 2"]},"valueProps":[{"headline":"","bullets":["bullet","bullet 2","bullet 3"]},{"headline":"","bullets":["bullet","bullet 2","bullet 3"]}],"pitchAngles":[{"angle":"","why":"","openingLine":"specific opening"},{"angle":"","why":"","openingLine":"opening 2"}],"talkingPoints":["specific tp with data","tp 2","tp 3","tp 4","tp 5"],"recentNews":[{"headline":"","date":""},{"headline":"","date":""}],"engineAngle":"specific compelling angle"}`;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -33,7 +70,7 @@ Output ONLY this JSON minified on one line (fill in the empty strings and number
         },
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 1000,
+          max_tokens: 2500,
           tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
           messages: [{ role: "user", content: prompt }],
         }),
@@ -41,17 +78,15 @@ Output ONLY this JSON minified on one line (fill in the empty strings and number
       if (res.status === 429) { await new Promise(r => setTimeout(r, 2000)); continue; }
       if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
       const data = await res.json();
-      // Web search responses have multiple content blocks; find the text block with the JSON
       const blocks: { type: string; text?: string }[] = data.content || [];
       const textBlocks = blocks.filter(b => b.type === "text" && b.text);
-      // Find the block containing the JSON brief (scan in reverse for the final text block)
+      // Find the block with the JSON brief (scan in reverse for the final text block)
       for (const block of [...textBlocks].reverse()) {
         const t = block.text || "";
         if (t.includes('"fitScore"') || t.includes('"snapshot"') || t.includes('"fitTier"')) {
           return t;
         }
       }
-      // Fallback: return all text joined
       return textBlocks.map(b => b.text).join("\n");
     } catch (err) {
       if (attempt === 1) throw err;
@@ -96,34 +131,81 @@ async function checkCrossbeam(company: string): Promise<{ partnerName: string; o
   } catch { return []; }
 }
 
+function buildBrief(parsed: Record<string, unknown>, ziData: Record<string, unknown> | null, cbSignals: { partnerName: string; overlapType: string }[], company: string, domain: string) {
+  const snapshot = {
+    name: String(ziData?.name || (parsed.snapshot as Record<string, unknown>)?.name || company),
+    industry: String(ziData?.industry || (parsed.snapshot as Record<string, unknown>)?.industry || ""),
+    size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String((parsed.snapshot as Record<string, unknown>)?.size || ""),
+    locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String((parsed.snapshot as Record<string, unknown>)?.locations || ""),
+    description: String(ziData?.description || (parsed.snapshot as Record<string, unknown>)?.description || ""),
+    website: String(ziData?.website || (parsed.snapshot as Record<string, unknown>)?.website || domain || ""),
+  };
+  return {
+    companySnapshot: snapshot,
+    partnershipFit: { score: Number(parsed.fitScore || 0), tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low", signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [] },
+    distributionPower: { networkSize: String((parsed.distribution as Record<string, unknown>)?.networkSize || "Unknown"), networkType: String((parsed.distribution as Record<string, unknown>)?.networkType || "Unknown"), events: Array.isArray((parsed.distribution as Record<string, unknown>)?.events) ? (parsed.distribution as Record<string, unknown>).events as string[] : [], existingPrograms: Array.isArray((parsed.distribution as Record<string, unknown>)?.programs) ? (parsed.distribution as Record<string, unknown>).programs as string[] : [] },
+    engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [],
+    pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [],
+    talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
+    crossbeamSignals: cbSignals,
+    recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [],
+    engineAngle: String(parsed.engineAngle || ""),
+  };
+}
+
+// ─── GET — poll for job status ────────────────────────────────────────────────
+
+export async function GET(req: NextRequest) {
+  const jobId = req.nextUrl.searchParams.get("jobId");
+  if (!jobId) return NextResponse.json({ error: "jobId required" }, { status: 400 });
+
+  const job = jobStore.get(jobId);
+  if (!job) {
+    // Job not found in this instance — still processing on another instance or expired
+    return NextResponse.json({ status: "processing" });
+  }
+
+  if (job.status === "done") return NextResponse.json({ status: "done", brief: job.brief });
+  if (job.status === "error") return NextResponse.json({ status: "error", error: job.error }, { status: 500 });
+  return NextResponse.json({ status: "processing" });
+}
+
+// ─── POST — start research job ────────────────────────────────────────────────
+
 export async function POST(req: NextRequest) {
   try {
     const { company, domain, notes, segmentFocus } = await req.json();
     if (!company?.trim()) return NextResponse.json({ error: "Company name required" }, { status: 400 });
     if (!KEY()) return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });
 
-    const [rawBrief, ziData, cbSignals] = await Promise.all([
-      researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
-      enrichZoomInfo(company.trim()),
-      checkCrossbeam(company.trim()),
-    ]);
+    const jobId = crypto.randomUUID();
+    jobStore.set(jobId, { status: "processing", created: Date.now() });
 
-    const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return NextResponse.json({ brief: { companySnapshot: { name: company, industry: "", size: "", locations: "", description: rawBrief.slice(0, 200), website: domain || "" }, partnershipFit: { score: 0, tier: "Potential" as const, signals: [] }, distributionPower: { networkSize: "Unknown", networkType: "Unknown", events: [], existingPrograms: [] }, engineValueProps: [], pitchAngles: [], talkingPoints: [], crossbeamSignals: cbSignals, recentNews: [], engineAngle: "" } });
-    }
+    // Schedule the heavy AI work to run after this response is sent
+    after(async () => {
+      try {
+        const [rawBrief, ziData, cbSignals] = await Promise.all([
+          researchAndSynthesize(company.trim(), domain?.trim() || "", notes?.trim() || "", segmentFocus || ""),
+          enrichZoomInfo(company.trim()),
+          checkCrossbeam(company.trim()),
+        ]);
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    const snapshot = {
-      name: String(ziData?.name || parsed.snapshot?.name || company),
-      industry: String(ziData?.industry || parsed.snapshot?.industry || ""),
-      size: ziData?.employeeCount ? `${Number(ziData.employeeCount).toLocaleString()} employees` : String(parsed.snapshot?.size || ""),
-      locations: ziData?.numberOfLocations ? `${ziData.numberOfLocations} locations` : String(parsed.snapshot?.locations || ""),
-      description: String(ziData?.description || parsed.snapshot?.description || ""),
-      website: String(ziData?.website || parsed.snapshot?.website || domain || ""),
-    };
+        const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          jobStore.set(jobId, { status: "done", brief: buildBrief({ fitScore: 0, fitTier: "Potential", fitSignals: [], snapshot: { name: company, description: rawBrief.slice(0, 200) } }, ziData, cbSignals, company, domain?.trim() || ""), created: Date.now() });
+          return;
+        }
 
-    return NextResponse.json({ brief: { companySnapshot: snapshot, partnershipFit: { score: Number(parsed.fitScore || 0), tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low", signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [] }, distributionPower: { networkSize: String(parsed.distribution?.networkSize || "Unknown"), networkType: String(parsed.distribution?.networkType || "Unknown"), events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [], existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [] }, engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [], pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [], talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [], crossbeamSignals: cbSignals, recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [], engineAngle: String(parsed.engineAngle || "") } });
+        const parsed = JSON.parse(jsonMatch[0]);
+        const brief = buildBrief(parsed, ziData, cbSignals, company, domain?.trim() || "");
+        jobStore.set(jobId, { status: "done", brief, created: Date.now() });
+      } catch (err) {
+        jobStore.set(jobId, { status: "error", error: String(err), created: Date.now() });
+      }
+      cleanupJobs();
+    });
+
+    return NextResponse.json({ jobId });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

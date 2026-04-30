@@ -1,6 +1,6 @@
 {
   "functions": {
-    "app/api/partner-research/route.ts": { "maxDuration": 120 },
+    "app/api/partner-research/route.ts": { "maxDuration": 300 },
     "app/api/contacts/route.ts":         { "maxDuration": 90 },
     "app/api/research/route.ts":         { "maxDuration": 60 },
     "app/api/discover/route.ts":         { "maxDuration": 60 },

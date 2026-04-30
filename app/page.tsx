@@ -948,16 +948,17 @@ export default function EngineAgent() {
     setActiveBriefId(null);
     setPitchLoadingMsg("Searching the web…");
 
-    // Client-side progress messages while we wait for the API
+    // Progress messages shown while polling
     const steps = ["Searching the web…", "Analysing fit signals…", "Building pitch angles…", "Finalising brief…"];
     let stepIdx = 0;
     const progressTimer = setInterval(() => {
       stepIdx = Math.min(stepIdx + 1, steps.length - 1);
       setPitchLoadingMsg(steps[stepIdx]);
-    }, 8000);
+    }, 6000);
 
     try {
-      const res = await fetch("/api/partner-research", {
+      // Step 1: Start the research job — returns immediately with a jobId
+      const startRes = await fetch("/api/partner-research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -968,15 +969,41 @@ export default function EngineAgent() {
           repName: styleProfile?.repName || "",
         }),
       });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      if (data.brief) {
-        const brief = data.brief as PitchBrief;
-        setPitchBrief(brief);
-        const newId = saveBrief(brief, pitchCompany.trim(), pitchDomain.trim());
-        setActiveBriefId(newId);
+      if (!startRes.ok) throw new Error(`Request failed (${startRes.status})`);
+      const startData = await startRes.json();
+      if (startData.error) throw new Error(startData.error);
+
+      // Step 2: Poll for the result
+      const jobId = startData.jobId;
+      if (!jobId) throw new Error("No job ID returned");
+
+      let brief: PitchBrief | null = null;
+      let attempts = 0;
+      const maxAttempts = 30; // up to 60 seconds of polling
+
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 2000)); // wait 2 seconds between polls
+        attempts++;
+
+        const pollRes = await fetch(`/api/partner-research?jobId=${encodeURIComponent(jobId)}`);
+        if (!pollRes.ok) continue; // keep trying on transient errors
+
+        const pollData = await pollRes.json();
+        if (pollData.status === "done" && pollData.brief) {
+          brief = pollData.brief as PitchBrief;
+          break;
+        }
+        if (pollData.status === "error") {
+          throw new Error(pollData.error || "Research failed");
+        }
+        // status === "processing" — keep polling
       }
+
+      if (!brief) throw new Error("Research timed out — please try again");
+
+      setPitchBrief(brief);
+      const newId = saveBrief(brief, pitchCompany.trim(), pitchDomain.trim());
+      setActiveBriefId(newId);
     } catch (err) {
       setPitchError(String(err));
     } finally {
