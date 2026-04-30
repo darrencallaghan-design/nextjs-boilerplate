@@ -1,25 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 export const maxDuration = 300;
 
 const KEY = () => process.env.ANTHROPIC_API_KEY || "";
 
-// ─── In-memory job store ─────────────────────────────────────────────────────
-// after() keeps the serverless instance alive after the response is sent.
-// Polls from the same instance will find the result here.
+// ─── Supabase job store ───────────────────────────────────────────────────────
+// Shared across all Vercel instances — fixes cross-instance poll misses.
+//
+// Run this ONCE in your Supabase SQL editor to create the table:
+//
+// create table if not exists partner_jobs (
+//   id text primary key,
+//   status text not null default 'processing',
+//   brief jsonb,
+//   error text,
+//   created_at timestamptz default now()
+// );
+// alter table partner_jobs enable row level security;
+// create policy "allow_all" on partner_jobs for all using (true) with check (true);
 
-type JobStatus = { status: "processing" | "done" | "error"; brief?: object; error?: string; created: number };
-const jobStore = new Map<string, JobStatus>();
+function db() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
-function cleanupJobs() {
+// In-memory fallback — same-instance polls still skip the Supabase round-trip
+const memStore = new Map<string, { status: "processing" | "done" | "error"; brief?: object; error?: string; created: number }>();
+
+async function jobSet(id: string, status: "processing" | "done" | "error", brief?: object, error?: string) {
+  memStore.set(id, { status, brief, error, created: Date.now() });
+  try {
+    await db().from("partner_jobs").upsert({ id, status, brief: brief ?? null, error: error ?? null });
+  } catch { /* Supabase write failure — in-memory still works for same-instance polls */ }
+}
+
+async function jobGet(id: string): Promise<{ status: "processing" | "done" | "error"; brief?: object; error?: string } | null> {
+  // 1. Check in-memory first (fastest — same instance)
+  const mem = memStore.get(id);
+  if (mem) return mem;
+
+  // 2. Fall back to Supabase (cross-instance case)
+  try {
+    const { data } = await db().from("partner_jobs").select("status,brief,error").eq("id", id).single();
+    if (!data) return null;
+    return { status: data.status, brief: data.brief ?? undefined, error: data.error ?? undefined };
+  } catch { return null; }
+}
+
+function cleanupMem() {
   const cutoff = Date.now() - 15 * 60 * 1000;
-  for (const [id, job] of jobStore.entries()) {
-    if (job.created < cutoff) jobStore.delete(id);
+  for (const [id, job] of memStore.entries()) {
+    if (job.created < cutoff) memStore.delete(id);
   }
 }
 
-// ─── Research function (the full-quality original prompt) ────────────────────
+// ─── Research function ────────────────────────────────────────────────────────
 
 async function researchAndSynthesize(company: string, domain: string, notes: string, segmentFocus: string): Promise<string> {
   const domainHint = domain ? ` (${domain})` : "";
@@ -80,7 +119,6 @@ Return ONLY valid JSON (no markdown, no explanation):
       const data = await res.json();
       const blocks: { type: string; text?: string }[] = data.content || [];
       const textBlocks = blocks.filter(b => b.type === "text" && b.text);
-      // Find the block with the JSON brief (scan in reverse for the final text block)
       for (const block of [...textBlocks].reverse()) {
         const t = block.text || "";
         if (t.includes('"fitScore"') || t.includes('"snapshot"') || t.includes('"fitTier"')) {
@@ -159,11 +197,8 @@ export async function GET(req: NextRequest) {
   const jobId = req.nextUrl.searchParams.get("jobId");
   if (!jobId) return NextResponse.json({ error: "jobId required" }, { status: 400 });
 
-  const job = jobStore.get(jobId);
-  if (!job) {
-    // Job not found in this instance — still processing on another instance or expired
-    return NextResponse.json({ status: "processing" });
-  }
+  const job = await jobGet(jobId);
+  if (!job) return NextResponse.json({ status: "processing" });
 
   if (job.status === "done") return NextResponse.json({ status: "done", brief: job.brief });
   if (job.status === "error") return NextResponse.json({ status: "error", error: job.error }, { status: 500 });
@@ -179,9 +214,8 @@ export async function POST(req: NextRequest) {
     if (!KEY()) return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 500 });
 
     const jobId = crypto.randomUUID();
-    jobStore.set(jobId, { status: "processing", created: Date.now() });
+    await jobSet(jobId, "processing");
 
-    // Schedule the heavy AI work to run after this response is sent
     after(async () => {
       try {
         const [rawBrief, ziData, cbSignals] = await Promise.all([
@@ -192,17 +226,17 @@ export async function POST(req: NextRequest) {
 
         const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-          jobStore.set(jobId, { status: "done", brief: buildBrief({ fitScore: 0, fitTier: "Potential", fitSignals: [], snapshot: { name: company, description: rawBrief.slice(0, 200) } }, ziData, cbSignals, company, domain?.trim() || ""), created: Date.now() });
+          await jobSet(jobId, "done", buildBrief({ fitScore: 0, fitTier: "Potential", fitSignals: [], snapshot: { name: company, description: rawBrief.slice(0, 200) } }, ziData, cbSignals, company, domain?.trim() || ""));
           return;
         }
 
         const parsed = JSON.parse(jsonMatch[0]);
         const brief = buildBrief(parsed, ziData, cbSignals, company, domain?.trim() || "");
-        jobStore.set(jobId, { status: "done", brief, created: Date.now() });
+        await jobSet(jobId, "done", brief);
       } catch (err) {
-        jobStore.set(jobId, { status: "error", error: String(err), created: Date.now() });
+        await jobSet(jobId, "error", undefined, String(err));
       }
-      cleanupJobs();
+      cleanupMem();
     });
 
     return NextResponse.json({ jobId });
