@@ -711,7 +711,7 @@ export default function EngineAgent() {
   const [showSegmentViewer, setShowSegmentViewer] = useState(false);
   const [reportEntries, setReportEntries] = useState<ReportEntry[]>([]);
   const [waveNumber, setWaveNumber] = useState(1);
-  const [reportSubTab, setReportSubTab] = useState<"log" | "summary">("log");
+  const [reportSubTab, setReportSubTab] = useState<"log" | "summary" | "followups">("log");
   const [repView, setRepView] = useState<"mine" | "all">("mine");
   const [reportPeriod, setReportPeriod] = useState<"today" | "week" | "all">("week");
   const [generatingFollowUp, setGeneratingFollowUp] = useState<string | null>(null);
@@ -3175,10 +3175,15 @@ SUBJECT: Re: ${entry.subjectLine}
                   )}
                   {/* Sub-tabs */}
                   <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: `1px solid ${BORDER}`, marginLeft: -24, marginRight: -24, paddingLeft: 24, alignItems: "center" }}>
-                    {[["log", "Activity Log"], ["summary", "Summary"]].map(([id, label]) => (
-                      <button key={id} onClick={() => setReportSubTab(id as "log" | "summary")}
-                        style={{ padding: "10px 18px", fontSize: 13, fontWeight: reportSubTab === id ? 600 : 400, color: reportSubTab === id ? TEXT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${reportSubTab === id ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit" }}>
+                    {([["log", "Activity Log"], ["summary", "Summary"], ["followups", "Follow-Ups"]] as const).map(([id, label]) => (
+                      <button key={id} onClick={() => setReportSubTab(id)}
+                        style={{ padding: "10px 18px", fontSize: 13, fontWeight: reportSubTab === id ? 600 : 400, color: reportSubTab === id ? TEXT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${reportSubTab === id ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
                         {label}
+                        {id === "followups" && (overdueEntries.length + dueThisWeek.length) > 0 && (
+                          <span style={{ background: overdueEntries.length > 0 ? ACCENT : INFO, color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20, lineHeight: 1.5 }}>
+                            {overdueEntries.length + dueThisWeek.length}
+                          </span>
+                        )}
                       </button>
                     ))}
                     {styleProfile && (
@@ -3513,6 +3518,75 @@ SUBJECT: Re: ${entry.subjectLine}
                           </div>
                         </div>
                       )}
+                    </div>
+                  ) : reportSubTab === "followups" ? (
+                    /* Follow-Up Queue */
+                    <div>
+                      {(() => {
+                        const allDue = [...overdueEntries, ...dueThisWeek];
+                        if (allDue.length === 0) return (
+                          <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                            <div style={{ fontSize: 40, opacity: 0.2 }}>✅</div>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: TEXT }}>All caught up</div>
+                            <div style={{ fontSize: 13, color: MUTED }}>No follow-ups overdue or due this week</div>
+                          </div>
+                        );
+                        const sections: Array<{ label: string; entries: ReportEntry[]; color: string; bg: string; icon: string }> = [];
+                        if (overdueEntries.length > 0) sections.push({ label: "Overdue", entries: overdueEntries, color: ACCENT, bg: "rgba(253,75,35,0.06)", icon: "⚠" });
+                        if (dueThisWeek.length > 0) sections.push({ label: "Due This Week", entries: dueThisWeek, color: INFO, bg: "rgba(20,118,216,0.05)", icon: "📅" });
+                        return sections.map(section => (
+                          <div key={section.label} style={{ marginBottom: 28 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: section.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>{section.icon} {section.label}</span>
+                              <span style={{ fontSize: 11, color: MUTED }}>— {section.entries.length} contact{section.entries.length !== 1 ? "s" : ""}</span>
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {section.entries.map(entry => {
+                                const nfu = nextFollowUp(entry);
+                                if (!nfu) return null;
+                                const daysUntil = (() => {
+                                  try {
+                                    const due = parseLocalDate(nfu.due);
+                                    const today = new Date(); today.setHours(0,0,0,0);
+                                    return Math.round((due.getTime() - today.getTime()) / 86400000);
+                                  } catch { return 0; }
+                                })();
+                                const daysLabel = daysUntil < 0
+                                  ? `${Math.abs(daysUntil)}d overdue`
+                                  : daysUntil === 0 ? "Due today"
+                                  : `Due in ${daysUntil}d`;
+                                const isGenerating = generatingFollowUp === entry.id;
+                                return (
+                                  <div key={entry.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                                    <div style={{ width: 3, alignSelf: "stretch", borderRadius: 4, background: section.color, flexShrink: 0 }} />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
+                                        <span style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{entry.contactName}</span>
+                                        <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>·</span>
+                                        <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>{entry.organization}</span>
+                                        <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: STAGE_COLORS[entry.stage]?.bg || BG, color: STAGE_COLORS[entry.stage]?.text || MUTED }}>{entry.stage}</span>
+                                      </div>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                        <span style={{ fontSize: 11, color: MUTED }}>{entry.title}</span>
+                                        {entry.title && entry.smerfCategory && <span style={{ fontSize: 10, color: MUTED }}>·</span>}
+                                        <span style={{ fontSize: 11, color: MUTED }}>{entry.smerfCategory}</span>
+                                        <span style={{ fontSize: 11, fontWeight: 600, color: section.color, background: section.bg, padding: "2px 8px", borderRadius: 20 }}>{nfu.label}</span>
+                                        <span style={{ fontSize: 11, color: daysUntil < 0 ? ACCENT : TEXT_SECONDARY }}>{daysLabel}</span>
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={() => generateFollowUp(entry, nfu.num as 1 | 2 | 3)}
+                                      disabled={isGenerating}
+                                      style={{ flexShrink: 0, padding: "8px 16px", background: isGenerating ? BORDER : section.color, color: isGenerating ? MUTED : "#fff", border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: isGenerating ? "not-allowed" : "pointer", whiteSpace: "nowrap", transition: "opacity 0.15s" }}>
+                                      {isGenerating ? "Drafting…" : `✍ Draft ${nfu.label}`}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ));
+                      })()}
                     </div>
                   ) : (
                     /* Activity Log */
