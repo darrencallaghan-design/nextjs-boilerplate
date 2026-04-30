@@ -742,7 +742,7 @@ export default function EngineAgent() {
     pitchAngles: { angle: string; why: string; openingLine: string }[];
     talkingPoints: string[];
     crossbeamSignals: { partnerName: string; overlapType: string }[];
-    recentNews: string[];
+    recentNews: { headline: string; date: string }[];
     engineAngle: string;
   }
   const BRIEFS_KEY = "engine-partner-briefs-v1";
@@ -903,7 +903,7 @@ export default function EngineAgent() {
   ${brief.talkingPoints.length ? section("Key talking points",
     brief.talkingPoints.map((tp, i) => `<div class="tp-row"><span class="tp-num">${i + 1}.</span><span>${tp}</span></div>`).join("")) : ""}
 
-  ${brief.recentNews.length ? section("Recent news & timing signals", bullets(brief.recentNews)) : ""}
+  ${brief.recentNews.length ? section("Recent news & timing signals", bullets(brief.recentNews.map(n => typeof n === "string" ? n : `${n.headline}${n.date ? ` (${n.date})` : ""}`))) : ""}
 
   ${brief.engineAngle ? section("Engine angle", `<div class="about-text">${brief.engineAngle}</div>`) : ""}
 
@@ -2564,7 +2564,8 @@ SUBJECT: Re: ${entry.subjectLine}
                       <div style={{ fontSize: 12, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>Recent News & Timing Signals</div>
                       {pitchBrief.recentNews.map((n, i) => (
                         <div key={i} style={{ fontSize: 13, color: TEXT, display: "flex", gap: 8, marginBottom: 6 }}>
-                          <span style={{ color: MUTED, flexShrink: 0 }}>•</span> {n}
+                          <span style={{ color: MUTED, flexShrink: 0 }}>•</span>
+                          <span>{typeof n === "string" ? n : `${n.headline}${n.date ? ` (${n.date})` : ""}`}</span>
                         </div>
                       ))}
                     </div>
