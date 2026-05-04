@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Pro plan: serverless, 60s
-export const maxDuration = 60;
+// claude-sonnet with web search can take 2-3 min; bumped to match partner-research
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const { orgName, orgType, contactName, contactTitle, orgContext } = await req.json();
@@ -49,5 +49,9 @@ Write 6-8 specific, factual research notes using real details you found. Be prec
     .map((b: { text: string }) => b.text)
     .join("\n");
 
-  return NextResponse.json({ text });
+  // Extract the org's primary website from any URLs mentioned in the research text
+  const urlMatch = text.match(/https?:\/\/(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z]{2,})+(?:\/[^\s,)»"]*)?/);
+  const website = urlMatch ? urlMatch[0].replace(/[.,)»"]+$/, "") : "";
+
+  return NextResponse.json({ text, website });
 }

@@ -219,9 +219,12 @@ WEBSITE: [full URL e.g. https://www.example.org]
     .map((b: { text: string }) => b.text)
     .join("\n");
 
-  // Extract website line
+  // Extract website — try explicit WEBSITE: line first, fall back to first URL found
   const websiteMatch = text.match(/^WEBSITE:\s*(.+)$/im);
-  const website = websiteMatch ? websiteMatch[1].trim() : "";
+  const urlFallback = text.match(/https?:\/\/(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z]{2,})+(?:\/[^\s,)»"]*)?/);
+  const website = websiteMatch
+    ? websiteMatch[1].trim().replace(/[.,)»"]+$/, "")
+    : urlFallback ? urlFallback[0].replace(/[.,)»"]+$/, "") : "";
   const research = text.replace(/^WEBSITE:\s*.+\n*/im, "").trim();
 
   return { research, website };

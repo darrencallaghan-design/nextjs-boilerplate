@@ -2164,9 +2164,18 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ orgName: org.name, orgType: org.type, orgContext: "", contactName: "", contactTitle: "" }),
           });
-          if (webRes.ok) orgResearch = (await webRes.json())?.text || "";
+          let orgWebsite = "";
+          if (webRes.ok) {
+            const webData = await webRes.json();
+            orgResearch = webData?.text || "";
+            orgWebsite = webData?.website || "";
+          }
           if (!orgResearch.trim()) {
             orgResearch = await callClaude([{ role: "user", content: `Research ${org.name} (${org.type}) for an Engine hotel partnership. What events do they run, how large is their membership, do members travel, and what is the best partnership angle? 4-5 sentences, factual and specific.` }]);
+          }
+          // Backfill website onto contacts for this org now that we have it
+          if (orgWebsite) {
+            setContacts(prev => prev.map(c => c.company === org.name && !c.orgWebsite ? { ...c, orgWebsite } : c));
           }
           addLog(`Research complete for ${org.name}`, "ok");
         } catch { addLog(`Research skipped for ${org.name}`, "info"); }
