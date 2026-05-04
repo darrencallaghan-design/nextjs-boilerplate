@@ -1693,7 +1693,13 @@ export default function EngineAgent() {
           let orgResearch = "";
           try {
             const webRes = await fetch("/api/research", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orgName: org.name, orgType: org.type, orgContext: org.why || "", contactName: "", contactTitle: "" }) });
-            if (webRes.ok) orgResearch = (await webRes.json())?.text || "";
+            if (webRes.ok) {
+              const webData = await webRes.json();
+              orgResearch = webData?.text || "";
+              if (webData?.website) {
+                setContacts(prev => prev.map(c => c.company === org.name && !c.orgWebsite ? { ...c, orgWebsite: webData.website } : c));
+              }
+            }
             if (!orgResearch.trim()) orgResearch = await callClaude([{ role: "user", content: `Research ${org.name} (${org.type}) for an Engine hotel partnership. What events do they run, how large are they, do their people travel regularly for work, and what's the best Engine partnership angle? 4-5 sentences, factual and specific.` }]);
           } catch { /* skip */ }
 
