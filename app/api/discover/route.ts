@@ -1,7 +1,81 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+// auto_drafts table — run once in Supabase SQL editor:
+//
+// CREATE TABLE IF NOT EXISTS auto_drafts (
+//   id                     UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+//   rep_name               TEXT        NOT NULL,
+//   org_name               TEXT        NOT NULL,
+//   org_type               TEXT        NOT NULL DEFAULT '',
+//   contact_name           TEXT        NOT NULL DEFAULT '',
+//   contact_title          TEXT        NOT NULL DEFAULT '',
+//   contact_email          TEXT        NOT NULL DEFAULT '',
+//   contact_source         TEXT        NOT NULL DEFAULT '',
+//   contact_email_verified BOOLEAN     DEFAULT FALSE,
+//   subject                TEXT        NOT NULL DEFAULT '',
+//   subject_b              TEXT        NOT NULL DEFAULT '',
+//   body                   TEXT        NOT NULL DEFAULT '',
+//   research               TEXT        NOT NULL DEFAULT '',
+//   website                TEXT        NOT NULL DEFAULT '',
+//   status                 TEXT        NOT NULL DEFAULT 'pending',
+//   created_at             TIMESTAMPTZ DEFAULT NOW()
+// );
+// ALTER TABLE auto_drafts ENABLE ROW LEVEL SECURITY;
+// CREATE POLICY "allow_all" ON auto_drafts FOR ALL USING (true) WITH CHECK (true);
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 // Pro plan: serverless, 60s
 export const maxDuration = 60;
+
+// GET /api/discover?rep=Darren&status=pending
+// Returns auto_drafts for a rep (defaults to pending)
+export async function GET(req: NextRequest) {
+  const repName = req.nextUrl.searchParams.get("rep");
+  const status  = req.nextUrl.searchParams.get("status") || "pending";
+
+  if (!repName) {
+    return NextResponse.json({ error: "Missing rep param" }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from("auto_drafts")
+    .select("*")
+    .eq("rep_name", repName)
+    .eq("status", status)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ drafts: data || [] });
+}
+
+// PATCH /api/discover — update status of an auto_draft (sent | dismissed)
+export async function PATCH(req: NextRequest) {
+  const { id, status } = await req.json();
+
+  if (!id || !status) {
+    return NextResponse.json({ error: "Missing id or status" }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from("auto_drafts")
+    .update({ status })
+    .eq("id", id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}
 
 // Discovers real similar organizations using live web search.
 // Uses the rep's segment focus to stay in their industry, and

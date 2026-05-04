@@ -100,6 +100,7 @@ interface StyleProfile {
   extractedStyle: string; // Claude's analysis of their writing
   editExamples: string[]; // saved edits to learn from
   segmentFocus: string;   // rep's target industries, org types, partner categories
+  discoveryEnabled?: boolean; // daily SMERF org discovery cron (opt-in per rep)
 }
 
 
@@ -678,7 +679,37 @@ function SegmentViewer({ profile, onUpdate, onClose }: { profile: StyleProfile; 
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+        {/* Daily Discovery toggle */}
+        <div style={{ marginTop: 20, padding: "14px 16px", background: BG, borderRadius: 10, border: `1px solid ${BORDER}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: TEXT, marginBottom: 2 }}>⚡ Daily Discovery</div>
+              <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.5 }}>
+                Auto-find 3 new SMERF orgs each morning at 6am ET — research, contact, and draft waiting in your Follow-Ups tab.
+              </div>
+            </div>
+            <button
+              onClick={() => onUpdate({ ...profile, discoveryEnabled: !(profile.discoveryEnabled ?? false) })}
+              style={{
+                flexShrink: 0, marginLeft: 16, width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
+                background: (profile.discoveryEnabled ?? false) ? SUCCESS : BORDER,
+                position: "relative", transition: "background 0.2s",
+              }}>
+              <span style={{
+                position: "absolute", top: 3, left: (profile.discoveryEnabled ?? false) ? 23 : 3,
+                width: 18, height: 18, borderRadius: "50%", background: "#fff",
+                transition: "left 0.2s", display: "block",
+              }} />
+            </button>
+          </div>
+          {(profile.discoveryEnabled ?? false) && (
+            <div style={{ marginTop: 8, fontSize: 11, color: SUCCESS, fontWeight: 600 }}>
+              ✓ Active — drafts will appear in your Follow-Ups tab each morning
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
           <button onClick={onClose} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 8, fontFamily: "inherit", fontSize: 13, color: TEXT_SECONDARY, cursor: "pointer" }}>
             Cancel
           </button>
@@ -722,6 +753,10 @@ export default function EngineAgent() {
   interface PreDraft { id: string; entry_id: string; fu_num: number; subject: string; body: string; rep_name: string; entry: PreDraftEntry | null; }
   const [preDrafts, setPreDrafts] = useState<PreDraft[]>([]);
   const [preDraftsLoaded, setPreDraftsLoaded] = useState(false);
+  // Auto-discovered orgs with pre-drafted emails (from daily discovery cron)
+  interface AutoDraft { id: string; rep_name: string; org_name: string; org_type: string; contact_name: string; contact_title: string; contact_email: string; contact_source: string; contact_email_verified: boolean; subject: string; subject_b: string; body: string; research: string; website: string; status: string; created_at: string; }
+  const [autoDrafts, setAutoDrafts] = useState<AutoDraft[]>([]);
+  const [autoDraftsLoaded, setAutoDraftsLoaded] = useState(false);
   const [repView, setRepView] = useState<"mine" | "all">("mine");
   const [reportPeriod, setReportPeriod] = useState<"today" | "week" | "all">("week");
   const [generatingFollowUp, setGeneratingFollowUp] = useState<string | null>(null);
@@ -870,6 +905,25 @@ export default function EngineAgent() {
       loadPreDrafts();
     }
   }, [reportSubTab, preDraftsLoaded, loadPreDrafts]);
+
+  const loadAutoDrafts = useCallback(async () => {
+    try {
+      const repName = styleProfile?.repName;
+      if (!repName) return;
+      const res = await fetch(`/api/discover?rep=${encodeURIComponent(repName)}&status=pending`);
+      if (!res.ok) return;
+      const { drafts } = await res.json();
+      setAutoDrafts(drafts || []);
+      setAutoDraftsLoaded(true);
+    } catch { /* silently fail */ }
+  }, [styleProfile?.repName]);
+
+  // Auto-load discovered drafts when Follow-Ups tab is opened
+  useEffect(() => {
+    if (reportSubTab === "followups" && !autoDraftsLoaded) {
+      loadAutoDrafts();
+    }
+  }, [reportSubTab, autoDraftsLoaded, loadAutoDrafts]);
 
   const saveBrief = (brief: PitchBrief, company: string, domain: string) => {
     const id = `${Date.now()}-${company.replace(/\s+/g, "-").toLowerCase()}`;
@@ -1295,11 +1349,12 @@ export default function EngineAgent() {
         .then(({ profile }) => {
           if (profile) {
             setStyleProfile({
-              repName:        profile.repName,
-              writingSample:  profile.writingSample  || "",
-              extractedStyle: profile.extractedStyle || "",
-              editExamples:   profile.editExamples   || [],
-              segmentFocus:   profile.segmentFocus   || "",
+              repName:           profile.repName,
+              writingSample:     profile.writingSample    || "",
+              extractedStyle:    profile.extractedStyle   || "",
+              editExamples:      profile.editExamples     || [],
+              segmentFocus:      profile.segmentFocus     || "",
+              discoveryEnabled:  profile.discoveryEnabled ?? false,
             });
             if (profile.waveNumber) setWaveNumber(profile.waveNumber);
           }
@@ -1357,12 +1412,13 @@ export default function EngineAgent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          repName:        profile.repName,
-          writingSample:  profile.writingSample,
-          extractedStyle: profile.extractedStyle,
-          editExamples:   profile.editExamples,
-          segmentFocus:   profile.segmentFocus,
-          waveNumber:     effectiveWave,
+          repName:           profile.repName,
+          writingSample:     profile.writingSample,
+          extractedStyle:    profile.extractedStyle,
+          editExamples:      profile.editExamples,
+          segmentFocus:      profile.segmentFocus,
+          waveNumber:        effectiveWave,
+          discoveryEnabled:  profile.discoveryEnabled ?? false,
         }),
       }).catch(() => { /* network error — local save still succeeded */ });
     }
@@ -3388,9 +3444,9 @@ SUBJECT: Re: ${entry.subjectLine}
                       <button key={id} onClick={() => setReportSubTab(id)}
                         style={{ padding: "10px 18px", fontSize: 13, fontWeight: reportSubTab === id ? 600 : 400, color: reportSubTab === id ? TEXT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${reportSubTab === id ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
                         {label}
-                        {id === "followups" && (overdueEntries.length + dueThisWeek.length) > 0 && (
-                          <span style={{ background: overdueEntries.length > 0 ? ACCENT : INFO, color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20, lineHeight: 1.5 }}>
-                            {overdueEntries.length + dueThisWeek.length}
+                        {id === "followups" && (overdueEntries.length + dueThisWeek.length + autoDrafts.length + preDrafts.length) > 0 && (
+                          <span style={{ background: autoDrafts.length > 0 ? ACCENT : overdueEntries.length > 0 ? ACCENT : INFO, color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20, lineHeight: 1.5 }}>
+                            {overdueEntries.length + dueThisWeek.length + autoDrafts.length + preDrafts.length}
                           </span>
                         )}
                       </button>
@@ -3731,6 +3787,61 @@ SUBJECT: Re: ${entry.subjectLine}
                   ) : reportSubTab === "followups" ? (
                     /* Follow-Up Queue */
                     <div>
+                      {/* ── Discovered This Morning section ──────────────── */}
+                      {autoDrafts.length > 0 && (
+                        <div style={{ marginBottom: 32 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: ACCENT, textTransform: "uppercase", letterSpacing: "0.06em" }}>⚡ Discovered This Morning</span>
+                            <span style={{ fontSize: 11, color: MUTED }}>— {autoDrafts.length} new org{autoDrafts.length !== 1 ? "s" : ""} found & drafted</span>
+                            <button onClick={() => { setAutoDraftsLoaded(false); loadAutoDrafts(); }} style={{ marginLeft: "auto", fontSize: 11, color: MUTED, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>↻ Refresh</button>
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {autoDrafts.map(draft => (
+                              <div key={draft.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", borderLeft: `3px solid ${ACCENT}` }}>
+                                <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                                      <span style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{draft.contact_name || "Contact"}</span>
+                                      <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>·</span>
+                                      <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>{draft.org_name}</span>
+                                      {draft.org_type && <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(253,75,35,0.08)", color: ACCENT }}>{draft.org_type}</span>}
+                                    </div>
+                                    {draft.contact_title && <div style={{ fontSize: 11, color: MUTED, marginBottom: 4 }}>{draft.contact_title}{draft.contact_email ? ` · ${draft.contact_email}` : ""}</div>}
+                                    {draft.website && (
+                                      <a href={draft.website.startsWith("http") ? draft.website : `https://${draft.website}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: INFO, textDecoration: "none", display: "inline-block", marginBottom: 4 }}>
+                                        🌐 {draft.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                                      </a>
+                                    )}
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: TEXT, marginBottom: 4 }}>Subject: {draft.subject}</div>
+                                    <div style={{ fontSize: 12, color: TEXT_SECONDARY, whiteSpace: "pre-wrap", lineHeight: 1.5, maxHeight: 80, overflow: "hidden", WebkitMaskImage: "linear-gradient(to bottom, black 60%, transparent 100%)" }}>{draft.body}</div>
+                                  </div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                                    <button
+                                      onClick={() => {
+                                        const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(draft.contact_email)}&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
+                                        window.open(gmailUrl, "_blank");
+                                        // Mark as sent
+                                        fetch("/api/discover", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: draft.id, status: "sent" }) });
+                                        setAutoDrafts(prev => prev.filter(d => d.id !== draft.id));
+                                      }}
+                                      style={{ padding: "7px 14px", background: ACCENT, color: "#fff", border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                      ✉ Send in Gmail
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        await fetch("/api/discover", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: draft.id, status: "dismissed" }) });
+                                        setAutoDrafts(prev => prev.filter(d => d.id !== draft.id));
+                                      }}
+                                      style={{ padding: "7px 14px", background: "none", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 7, fontFamily: "inherit", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                      Dismiss
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {/* ── Pre-drafted by Agent section ─────────────────── */}
                       {preDrafts.length > 0 && (
                         <div style={{ marginBottom: 32 }}>
@@ -3786,7 +3897,7 @@ SUBJECT: Re: ${entry.subjectLine}
                       {/* ── Due / Overdue sections ─────────────────────────── */}
                       {(() => {
                         const allDue = [...overdueEntries, ...dueThisWeek];
-                        if (allDue.length === 0 && preDrafts.length === 0) return (
+                        if (allDue.length === 0 && preDrafts.length === 0 && autoDrafts.length === 0) return (
                           <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
                             <div style={{ fontSize: 40, opacity: 0.2 }}>✅</div>
                             <div style={{ fontSize: 15, fontWeight: 600, color: TEXT }}>All caught up</div>
