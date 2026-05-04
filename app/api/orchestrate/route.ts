@@ -187,6 +187,72 @@ Return ONLY valid JSON: {"people":[{"name":"Full Name","title":"Exact Title","em
   } catch { return []; }
 }
 
+// ── Website Scraper subagent ──────────────────────────────────────────────────
+async function scrapeWebsiteContacts(website: string, orgName: string): Promise<OrgContact[]> {
+  if (!website) return [];
+  const base = website.replace(/\/$/, "");
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": "web-search-2025-03-05",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1000,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
+      messages: [{
+        role: "user",
+        content: `Find senior staff contacts at "${orgName}" directly from their website.
+
+Visit these pages IN ORDER until you find staff listings:
+${base}/staff
+${base}/leadership
+${base}/team
+${base}/about
+${base}/board
+${base}/people
+${base}/about-us
+
+Extract only senior titles: Executive Director, CEO, President, COO, VP, Director, Chief.
+Capture name, exact title, and email address if listed on the page.
+
+Return ONLY valid JSON, no other text:
+{"contacts":[{"name":"Full Name","title":"Exact Title","email":"email@domain.com or empty string"}]}
+
+If no accessible staff pages are found, return: {"contacts":[]}`,
+      }],
+    }),
+  });
+
+  if (!res.ok) return [];
+  const data = await res.json();
+  const text = (data?.content || [])
+    .filter((b: { type: string }) => b.type === "text")
+    .map((b: { text: string }) => b.text)
+    .join("\n");
+
+  const match = text.match(/\{[\s\S]*"contacts"[\s\S]*\}/);
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[0]);
+    return (parsed.contacts || [])
+      .filter((p: { name?: string; title?: string }) => p.name && p.title && p.name !== "Unknown")
+      .slice(0, 4)
+      .map((p: { name: string; title: string; email?: string }) => ({
+        name: p.name,
+        title: p.title,
+        company: orgName,
+        email: p.email || "",
+        source: "Website",
+        emailVerified: !!(p.email),
+      }));
+  } catch { return []; }
+}
+
 // ── Researcher subagent ───────────────────────────────────────────────────────
 async function researchOrg(orgName: string, orgType: string): Promise<{ research: string; website: string }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -272,34 +338,51 @@ SUBJECT_B: [value/direct style — leads with the benefit]
   };
 }
 
-// ── Process one org (research + drafts) ───────────────────────────────────────
+// ── Process one org (research → scrape + discover → draft) ───────────────────
 async function processOrg(
   org: InputOrg,
   styleContext: string,
   useContactFinder: boolean
 ): Promise<TaskResult> {
-  // Run research + (optionally) contact discovery in parallel
-  const [{ research, website }, discoveredContacts] = await Promise.all([
-    researchOrg(org.name, org.type),
+  // Step 1: Research first — we need the website URL before scraping
+  const { research, website } = await researchOrg(org.name, org.type);
+
+  // Step 2: Website scraper + contact finder run in parallel (both use real domain now)
+  const [websiteContacts, discoveredContacts] = await Promise.all([
+    website ? scrapeWebsiteContacts(website, org.name) : Promise.resolve([] as OrgContact[]),
     useContactFinder && org.contacts.length === 0
-      ? findContacts(org.name, org.type, "")
+      ? findContacts(org.name, org.type, website)
       : Promise.resolve([] as OrgContact[]),
   ]);
 
-  const contacts = org.contacts.length > 0 ? org.contacts : discoveredContacts;
-  if (!contacts.length) {
-    // Fallback contacts if nothing found
-    contacts.push({
-      name: "Program Director",
-      title: "Director of Programs",
-      company: org.name,
-      email: "",
-      source: "Fallback",
-      emailVerified: false,
-    });
+  // Merge contacts: pre-loaded > website scraped > discovered
+  // Website contacts are most reliable (direct from org) so they go first
+  let contacts: OrgContact[];
+  if (org.contacts.length > 0) {
+    contacts = org.contacts;
+  } else {
+    const merged = [...websiteContacts, ...discoveredContacts];
+    const seen = new Set<string>();
+    contacts = merged.filter(c => {
+      const key = c.name.toLowerCase().trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 3);
+
+    if (!contacts.length) {
+      contacts = [{
+        name: "Program Director",
+        title: "Director of Programs",
+        company: org.name,
+        email: "",
+        source: "Fallback",
+        emailVerified: false,
+      }];
+    }
   }
 
-  // Draft all contacts in parallel
+  // Step 3: Draft all contacts in parallel
   const drafts = await Promise.all(
     contacts.map((c, i) => draftEmail(c, org.name, org.type, research, styleContext, i, contacts))
   );
