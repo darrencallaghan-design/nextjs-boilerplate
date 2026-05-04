@@ -75,6 +75,7 @@ interface TaskResult {
   orgType: string;
   drafts: DraftResult[];
   research: string;
+  website?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -187,7 +188,7 @@ Return ONLY valid JSON: {"people":[{"name":"Full Name","title":"Exact Title","em
 }
 
 // ── Researcher subagent ───────────────────────────────────────────────────────
-async function researchOrg(orgName: string, orgType: string): Promise<string> {
+async function researchOrg(orgName: string, orgType: string): Promise<{ research: string; website: string }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -198,20 +199,32 @@ async function researchOrg(orgName: string, orgType: string): Promise<string> {
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 600,
+      max_tokens: 700,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
       messages: [{
         role: "user",
-        content: `Research "${orgName}" (${orgType}) for a hotel partnership pitch. Find: events they run (names, attendance, cities), member/network size, travel patterns, recent news. Return 4-5 specific facts with real numbers. Concise.`,
+        content: `Research "${orgName}" (${orgType}) for a hotel partnership pitch. Find: their primary website URL, events they run (names, attendance, cities), member/network size, travel patterns, recent news.
+
+Return in this EXACT format:
+WEBSITE: [full URL e.g. https://www.example.org]
+
+[4-5 specific facts with real numbers, concise]`,
       }],
     }),
   });
-  if (!res.ok) return "";
+  if (!res.ok) return { research: "", website: "" };
   const data = await res.json();
-  return (data?.content || [])
+  const text = (data?.content || [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)
     .join("\n");
+
+  // Extract website line
+  const websiteMatch = text.match(/^WEBSITE:\s*(.+)$/im);
+  const website = websiteMatch ? websiteMatch[1].trim() : "";
+  const research = text.replace(/^WEBSITE:\s*.+\n*/im, "").trim();
+
+  return { research, website };
 }
 
 // ── Copywriter subagent ───────────────────────────────────────────────────────
@@ -263,7 +276,7 @@ async function processOrg(
   useContactFinder: boolean
 ): Promise<TaskResult> {
   // Run research + (optionally) contact discovery in parallel
-  const [research, discoveredContacts] = await Promise.all([
+  const [{ research, website }, discoveredContacts] = await Promise.all([
     researchOrg(org.name, org.type),
     useContactFinder && org.contacts.length === 0
       ? findContacts(org.name, org.type, "")
@@ -288,7 +301,7 @@ async function processOrg(
     contacts.map((c, i) => draftEmail(c, org.name, org.type, research, styleContext, i, contacts))
   );
 
-  return { orgName: org.name, orgType: org.type, drafts, research };
+  return { orgName: org.name, orgType: org.type, drafts, research, website };
 }
 
 // ── Chunk array ───────────────────────────────────────────────────────────────

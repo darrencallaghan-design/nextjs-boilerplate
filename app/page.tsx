@@ -36,6 +36,7 @@ interface Contact {
   email: string;
   source: string;
   emailVerified?: boolean; // true only if the email was found on a real webpage
+  orgWebsite?: string;     // org's primary website, surfaced during batch research
 }
 
 interface Draft {
@@ -797,7 +798,7 @@ export default function EngineAgent() {
         // Process newly completed org tasks as they stream in
         const currentWave = waveNumber;
         const repName = styleProfile?.repName || "";
-        (data.tasks || []).forEach((task: { orgName: string; orgType: string; drafts: { contact: Contact & { emailVerified?: boolean; source?: string }; subject: string; subjectB?: string; body: string }[]; research: string }) => {
+        (data.tasks || []).forEach((task: { orgName: string; orgType: string; drafts: { contact: Contact & { emailVerified?: boolean; source?: string }; subject: string; subjectB?: string; body: string }[]; research: string; website?: string }) => {
           if (processedOrgsRef.current.has(task.orgName)) return;
           processedOrgsRef.current.add(task.orgName);
 
@@ -829,7 +830,7 @@ export default function EngineAgent() {
           });
           setDrafts(prev => [...prev, ...newDrafts]);
           setReportEntries(prev => [...prev, ...newEntries]);
-          setContacts(prev => [...prev, ...task.drafts.map(d => ({ name: d.contact.name, title: d.contact.title, company: task.orgName, email: d.contact.email, source: d.contact.source || "" }))]);
+          setContacts(prev => [...prev, ...task.drafts.map(d => ({ name: d.contact.name, title: d.contact.title, company: task.orgName, email: d.contact.email, source: d.contact.source || "", orgWebsite: task.website || "" }))]);
           if (newEntries.length) {
             fetch("/api/reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newEntries) }).catch(() => {});
           }
@@ -3077,6 +3078,12 @@ SUBJECT: Re: ${entry.subjectLine}
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{c.name}</div>
                     <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 2 }}>{c.title} · {c.company}</div>
+                    {c.orgWebsite && (
+                      <a href={c.orgWebsite.startsWith("http") ? c.orgWebsite : `https://${c.orgWebsite}`} target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: 11, color: INFO, marginTop: 3, display: "inline-block", textDecoration: "none" }}>
+                        🌐 {c.orgWebsite.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                      </a>
+                    )}
                     <div style={{ fontSize: 12, color: INFO, marginTop: 4 }}>{c.email}</div>
                   </div>
                   <div style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, fontWeight: 500,
