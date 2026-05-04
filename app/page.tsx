@@ -712,11 +712,21 @@ export default function EngineAgent() {
   const [reportEntries, setReportEntries] = useState<ReportEntry[]>([]);
   const [waveNumber, setWaveNumber] = useState(1);
   const [reportSubTab, setReportSubTab] = useState<"log" | "summary" | "followups">("log");
+  // ── Orchestrator state ────────────────────────────────────────────────────
+  const [orchRunId, setOrchRunId] = useState<string | null>(null);
+  const [orchProgress, setOrchProgress] = useState<{ total: number; completed: number } | null>(null);
+  const [useParallelMode, setUseParallelMode] = useState(true);
+  // Pre-drafted follow-ups loaded from Supabase (written by the cron agent)
+  interface PreDraftEntry { id: string; contact_name: string; title: string; email: string; organization: string; stage: string; smerf_category: string; follow_up_due: string | null; follow_up_2_due: string | null; follow_up_3_due: string | null; }
+  interface PreDraft { id: string; entry_id: string; fu_num: number; subject: string; body: string; rep_name: string; entry: PreDraftEntry | null; }
+  const [preDrafts, setPreDrafts] = useState<PreDraft[]>([]);
+  const [preDraftsLoaded, setPreDraftsLoaded] = useState(false);
   const [repView, setRepView] = useState<"mine" | "all">("mine");
   const [reportPeriod, setReportPeriod] = useState<"today" | "week" | "all">("week");
   const [generatingFollowUp, setGeneratingFollowUp] = useState<string | null>(null);
   const [followUpPreview, setFollowUpPreview] = useState<{ entry: ReportEntry; subject: string; body: string; gmailUrl: string; fuNum: 1 | 2 | 3 } | null>(null);
   const [followUpEditedBody, setFollowUpEditedBody] = useState("");
+  const [preDraftIdInModal, setPreDraftIdInModal] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState<"reports" | "generate" | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importPreviewEntries, setImportPreviewEntries] = useState<ReportEntry[] | null>(null);
@@ -771,6 +781,94 @@ export default function EngineAgent() {
       if (raw) setSavedBriefs(JSON.parse(raw));
     } catch {}
   }, []);
+
+  // ── Orchestrator polling ──────────────────────────────────────────────────
+  const processedOrgsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!orchRunId) return;
+    processedOrgsRef.current = new Set();
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/orchestrate?runId=${orchRunId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setOrchProgress({ total: data.total, completed: data.completed });
+
+        // Process newly completed org tasks as they stream in
+        const currentWave = waveNumber;
+        const repName = styleProfile?.repName || "";
+        (data.tasks || []).forEach((task: { orgName: string; orgType: string; drafts: { contact: Contact & { emailVerified?: boolean; source?: string }; subject: string; subjectB?: string; body: string }[]; research: string }) => {
+          if (processedOrgsRef.current.has(task.orgName)) return;
+          processedOrgsRef.current.add(task.orgName);
+
+          const newEntries: ReportEntry[] = [];
+          const newDrafts: Draft[] = [];
+          task.drafts.forEach((d, idx) => {
+            const entryId = `orch-${Date.now()}-${task.orgName.replace(/\s+/g, "")}-${idx}`;
+            newEntries.push({
+              id: entryId, repName, wave: currentWave,
+              smerfCategory: categorizeSmerf(task.orgType),
+              organization: task.orgName, contactName: d.contact.name,
+              title: d.contact.title, email: d.contact.email,
+              subjectLine: d.subject, dateSent: null, status: "Pending",
+              stage: "Prospecting" as DealStage,
+              followUpDue: null, followUpSent: false,
+              followUp2Due: null, followUp2Sent: false,
+              followUp3Due: null, followUp3Sent: false, notes: "",
+            });
+            newDrafts.push({
+              to: d.contact.name, email: d.contact.email,
+              subject: d.subject, subjectB: d.subjectB,
+              body: d.body, sentAt: null,
+              research: task.research, orgType: task.orgType,
+              company: task.orgName, contactTitle: d.contact.title,
+              reportId: entryId,
+              emailVerified: d.contact.emailVerified ?? false,
+              contactSource: d.contact.source || "",
+            });
+          });
+          setDrafts(prev => [...prev, ...newDrafts]);
+          setReportEntries(prev => [...prev, ...newEntries]);
+          setContacts(prev => [...prev, ...task.drafts.map(d => ({ name: d.contact.name, title: d.contact.title, company: task.orgName, email: d.contact.email, source: d.contact.source || "" }))]);
+          if (newEntries.length) {
+            fetch("/api/reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newEntries) }).catch(() => {});
+          }
+          addLog(`✓ ${task.orgName} — ${task.drafts.length} draft${task.drafts.length !== 1 ? "s" : ""} ready`, "ok");
+        });
+
+        if (data.status === "done") {
+          clearInterval(interval);
+          setOrchRunId(null);
+          setOrchProgress(null);
+          setRunning(false);
+          const count = processedOrgsRef.current.size;
+          setStatus({ msg: `Done! ${count} org${count !== 1 ? "s" : ""} processed in parallel.`, cls: "ok" });
+          setStep(2, "done"); setStep(3, "done"); setStep(4, "done");
+        }
+      } catch { /* ignore poll errors */ }
+    }, 2500);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orchRunId]);
+
+  // ── Load pre-drafted follow-ups from cron agent ───────────────────────────
+  const loadPreDrafts = useCallback(async () => {
+    try {
+      const repParam = styleProfile?.repName ? `?repName=${encodeURIComponent(styleProfile.repName)}` : "";
+      const res = await fetch(`/api/followups${repParam}`);
+      if (!res.ok) return;
+      const { drafts } = await res.json();
+      setPreDrafts(drafts || []);
+      setPreDraftsLoaded(true);
+    } catch { /* silently fail */ }
+  }, [styleProfile?.repName]);
+
+  // Auto-load pre-drafts when the Follow-Ups tab is opened
+  useEffect(() => {
+    if (reportSubTab === "followups" && !preDraftsLoaded) {
+      loadPreDrafts();
+    }
+  }, [reportSubTab, preDraftsLoaded, loadPreDrafts]);
 
   const saveBrief = (brief: PitchBrief, company: string, domain: string) => {
     const id = `${Date.now()}-${company.replace(/\s+/g, "-").toLowerCase()}`;
@@ -1389,11 +1487,57 @@ export default function EngineAgent() {
     }
   };
 
+  // ── Parallel batch runner (Orchestrator mode) ─────────────────────────────
+  const runWorkflowParallel = async (profile?: StyleProfile) => {
+    const activeProfile = profile || styleProfile;
+    if (!uploadedOrgs.length || running) return;
+    setRunning(true);
+    resetAll();
+    const thisWave = waveNumber + 1;
+    setWaveNumber(thisWave);
+    setStep(0, "done"); setStep(1, "active");
+
+    const listSegmentCtx = activeProfile?.segmentFocus
+      ? `\n\nSEGMENT CONTEXT: ${activeProfile.segmentFocus.substring(0, 400)}`
+      : "";
+    const styleContext = activeProfile
+      ? `You are ghostwriting for ${activeProfile.repName} at Engine. Match their exact voice from this sample:\n---\n${activeProfile.writingSample}\n---\nStyle: ${activeProfile.extractedStyle}${activeProfile.editExamples.length > 0 ? `\n\nEdits they've made — match this direction:\n${activeProfile.editExamples.slice(-3).join("\n---\n")}` : ""}${listSegmentCtx}`
+      : `You are writing outreach for an Engine partnerships rep.`;
+
+    try {
+      const res = await fetch("/api/orchestrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orgs: uploadedOrgs,
+          styleContext,
+          repName: activeProfile?.repName || "",
+          wave: thisWave,
+        }),
+      });
+      if (!res.ok) throw new Error(`Orchestrator error: ${res.status}`);
+      const { runId, total } = await res.json();
+      setOrchRunId(runId);
+      setOrchProgress({ total, completed: 0 });
+      setStep(1, "done"); setStep(2, "active");
+      setStatus({ msg: `Running ${total} org${total !== 1 ? "s" : ""} in parallel…`, cls: "" });
+      addLog(`Orchestrator started — ${total} orgs running simultaneously`, "ok");
+    } catch (err) {
+      setRunning(false);
+      setOrchRunId(null);
+      setOrchProgress(null);
+      setStatus({ msg: `Orchestrator failed: ${(err as Error).message}`, cls: "err" });
+      addLog("Orchestrator failed — falling back to sequential mode", "err");
+      // Fallback to sequential
+      runWorkflowFromList(activeProfile);
+    }
+  };
+
   const handleRunClick = () => {
     if (listMode) {
       if (!uploadedOrgs.length) { alert("Upload a contact list first."); return; }
       if (!styleProfile) { setShowSetup(true); return; }
-      runWorkflowFromList();
+      if (useParallelMode) { runWorkflowParallel(); } else { runWorkflowFromList(); }
       return;
     }
     if (!styleProfile) { setShowSetup(true); return; }
@@ -1403,7 +1547,11 @@ export default function EngineAgent() {
   const handleStyleComplete = (profile: StyleProfile) => {
     saveStyleProfile(profile);
     setShowSetup(false);
-    if (listMode) { runWorkflowFromList(profile); } else { runWorkflow(profile); }
+    if (listMode) {
+      if (useParallelMode) { runWorkflowParallel(profile); } else { runWorkflowFromList(profile); }
+    } else {
+      runWorkflow(profile);
+    }
   };
 
   // Save an edited draft as a style example so Claude learns from it
@@ -2330,7 +2478,7 @@ SUBJECT: Re: ${entry.subjectLine}
             )}
             <div style={{ display: "flex", gap: 8, marginTop: followUpEditedBody !== followUpPreview.body ? 0 : 10 }}>
               <button
-                onClick={() => { setFollowUpPreview(null); setFollowUpEditedBody(""); }}
+                onClick={() => { setFollowUpPreview(null); setFollowUpEditedBody(""); setPreDraftIdInModal(null); }}
                 style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 8, fontFamily: "inherit", fontSize: 13, color: TEXT_SECONDARY, cursor: "pointer" }}>
                 Discard
               </button>
@@ -2343,6 +2491,12 @@ SUBJECT: Re: ${entry.subjectLine}
                   const fuField = followUpPreview.fuNum === 1 ? { followUpSent: true } : followUpPreview.fuNum === 2 ? { followUp2Sent: true } : { followUp3Sent: true };
                   setReportEntries(prev => prev.map(e => e.id === followUpPreview.entry.id ? { ...e, ...fuField } : e));
                   patchReportEntry(followUpPreview.entry.id, fuField);
+                  // Mark the pre-draft as sent if it came from the agent queue
+                  if (preDraftIdInModal) {
+                    fetch("/api/followups", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: preDraftIdInModal, status: "sent" }) });
+                    setPreDrafts(prev => prev.filter(d => d.id !== preDraftIdInModal));
+                    setPreDraftIdInModal(null);
+                  }
                   setFollowUpPreview(null);
                   setFollowUpEditedBody("");
                 }}
@@ -2812,20 +2966,53 @@ SUBJECT: Re: ${entry.subjectLine}
                       <div style={{ fontWeight: 600, color: TEXT }}>↓ Import to Activity Log</div>
                       <div style={{ color: MUTED, fontSize: 11, marginTop: 2 }}>Already contacted — add to your pipeline without generating emails</div>
                     </button>
-                    {running ? (
+                    {/* Parallel / Sequential toggle */}
+                    {!running && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: BG, borderRadius: 7, border: `1px solid ${BORDER}` }}>
+                        <button
+                          onClick={() => setUseParallelMode(v => !v)}
+                          style={{ width: 36, height: 20, borderRadius: 10, background: useParallelMode ? ACCENT : BORDER, border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0, padding: 0 }}>
+                          <span style={{ position: "absolute", top: 2, left: useParallelMode ? 18 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s", display: "block" }} />
+                        </button>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: useParallelMode ? ACCENT : TEXT_SECONDARY }}>
+                            {useParallelMode ? "⚡ Parallel mode — all orgs at once" : "Sequential mode — one at a time"}
+                          </div>
+                          <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>
+                            {useParallelMode ? "Orchestrator fans out 5 agents simultaneously" : "Classic mode, slower but lower API usage"}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Orchestrator progress bar */}
+                    {orchProgress && running && (
+                      <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "12px 14px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: ACCENT }}>⚡ Agent team running</span>
+                          <span style={{ fontSize: 12, color: TEXT_SECONDARY }}>{orchProgress.completed} / {orchProgress.total} orgs</span>
+                        </div>
+                        <div style={{ background: BORDER, borderRadius: 4, height: 6, overflow: "hidden" }}>
+                          <div style={{ height: "100%", borderRadius: 4, background: ACCENT, width: `${orchProgress.total > 0 ? (orchProgress.completed / orchProgress.total) * 100 : 0}%`, transition: "width 0.4s ease" }} />
+                        </div>
+                        <div style={{ fontSize: 10, color: MUTED, marginTop: 6 }}>Drafts appear below as each org completes</div>
+                      </div>
+                    )}
+
+                    {running && !orchProgress ? (
                       <button
                         onClick={() => { cancelledRef.current = true; }}
                         style={{ width: "100%", padding: "11px 12px", background: "#E53935", border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 600, color: "#fff", cursor: "pointer", textAlign: "center", lineHeight: 1.4 }}>
                         ⏹ Stop Workflow
                       </button>
-                    ) : (
+                    ) : !running ? (
                       <button
                         onClick={handleRunClick}
                         style={{ width: "100%", padding: "11px 12px", background: ACCENT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 500, color: "#fff", cursor: "pointer", textAlign: "left", lineHeight: 1.4 }}>
                         <div style={{ fontWeight: 600 }}>✉ Generate New Emails</div>
-                        <div style={{ fontSize: 11, marginTop: 2, opacity: 0.85 }}>Research each org and draft outreach — skips anyone already in your pipeline</div>
+                        <div style={{ fontSize: 11, marginTop: 2, opacity: 0.85 }}>{useParallelMode ? "All orgs run simultaneously via agent team" : "Research each org and draft outreach — skips anyone already in your pipeline"}</div>
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -3522,15 +3709,69 @@ SUBJECT: Re: ${entry.subjectLine}
                   ) : reportSubTab === "followups" ? (
                     /* Follow-Up Queue */
                     <div>
+                      {/* ── Pre-drafted by Agent section ─────────────────── */}
+                      {preDrafts.length > 0 && (
+                        <div style={{ marginBottom: 32 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: SUCCESS, textTransform: "uppercase", letterSpacing: "0.06em" }}>⚡ Pre-drafted by Agent</span>
+                            <span style={{ fontSize: 11, color: MUTED }}>— {preDrafts.length} ready to send</span>
+                            <button onClick={() => { setPreDraftsLoaded(false); loadPreDrafts(); }} style={{ marginLeft: "auto", fontSize: 11, color: MUTED, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>↻ Refresh</button>
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {preDrafts.map(draft => (
+                              <div key={draft.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", borderLeft: `3px solid ${SUCCESS}` }}>
+                                <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                                      <span style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{draft.entry?.contact_name || "Contact"}</span>
+                                      <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>·</span>
+                                      <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>{draft.entry?.organization || ""}</span>
+                                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "rgba(0,146,98,0.1)", color: SUCCESS }}>FU {draft.fu_num}</span>
+                                    </div>
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: TEXT, marginBottom: 4 }}>Subject: {draft.subject}</div>
+                                    <div style={{ fontSize: 12, color: TEXT_SECONDARY, whiteSpace: "pre-wrap", lineHeight: 1.5, maxHeight: 80, overflow: "hidden", WebkitMaskImage: "linear-gradient(to bottom, black 60%, transparent 100%)" }}>{draft.body}</div>
+                                  </div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                                    <button
+                                      onClick={() => {
+                                        // Open the draft in the existing follow-up preview modal
+                                        const matchEntry = reportEntries.find(e => e.id === draft.entry_id);
+                                        if (matchEntry) {
+                                          const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(matchEntry.email)}&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
+                                          setFollowUpEditedBody(draft.body);
+                                          setPreDraftIdInModal(draft.id);
+                                          setFollowUpPreview({ entry: matchEntry, subject: draft.subject, body: draft.body, gmailUrl, fuNum: draft.fu_num as 1 | 2 | 3 });
+                                        }
+                                      }}
+                                      style={{ padding: "7px 14px", background: SUCCESS, color: "#fff", border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                      ✉ Review &amp; Send
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        await fetch("/api/followups", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: draft.id, status: "dismissed" }) });
+                                        setPreDrafts(prev => prev.filter(d => d.id !== draft.id));
+                                      }}
+                                      style={{ padding: "7px 14px", background: "none", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 7, fontFamily: "inherit", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                      Dismiss
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {/* ── Due / Overdue sections ─────────────────────────── */}
                       {(() => {
                         const allDue = [...overdueEntries, ...dueThisWeek];
-                        if (allDue.length === 0) return (
+                        if (allDue.length === 0 && preDrafts.length === 0) return (
                           <div style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
                             <div style={{ fontSize: 40, opacity: 0.2 }}>✅</div>
                             <div style={{ fontSize: 15, fontWeight: 600, color: TEXT }}>All caught up</div>
                             <div style={{ fontSize: 13, color: MUTED }}>No follow-ups overdue or due this week</div>
                           </div>
                         );
+                        if (allDue.length === 0) return null;
                         const sections: Array<{ label: string; entries: ReportEntry[]; color: string; bg: string; icon: string }> = [];
                         if (overdueEntries.length > 0) sections.push({ label: "Overdue", entries: overdueEntries, color: ACCENT, bg: "rgba(253,75,35,0.06)", icon: "⚠" });
                         if (dueThisWeek.length > 0) sections.push({ label: "Due This Week", entries: dueThisWeek, color: INFO, bg: "rgba(20,118,216,0.05)", icon: "📅" });
