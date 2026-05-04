@@ -14,7 +14,10 @@ Organization: ${orgName} (${orgType})
 Contact: ${contactName}, ${contactTitle}
 ${orgContext ? `Additional context: ${orgContext}` : ""}
 
-Find and report on:
+Start your response with this line (required):
+WEBSITE: [the org's primary website URL, e.g. https://www.example.org]
+
+Then find and report on:
 1. What events, conferences, or gatherings does ${orgName} run, and at what scale? (How many attendees, how often, which cities?)
 2. How do they engage with members or customers on an ongoing basis? (Annual events, chapter meetings, benefits programs, certification programs?)
 3. Do their members or customers have meaningful hotel travel tied to their work or participation?
@@ -49,9 +52,11 @@ Write 6-8 specific, factual research notes using real details you found. Be prec
     .map((b: { text: string }) => b.text)
     .join("\n");
 
-  // Extract the org's primary website from any URLs mentioned in the research text
-  const urlMatch = text.match(/https?:\/\/(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z]{2,})+(?:\/[^\s,)»"]*)?/);
-  const website = urlMatch ? urlMatch[0].replace(/[.,)»"]+$/, "") : "";
+  // Extract the WEBSITE: line Claude was asked to output first
+  const websiteMatch = text.match(/^WEBSITE:\s*(.+)$/im);
+  const website = websiteMatch ? websiteMatch[1].trim().replace(/[.,)»"]+$/, "") : "";
+  // Strip the WEBSITE: line from research text so it doesn't appear in email context
+  const cleanText = text.replace(/^WEBSITE:\s*.+\n*/im, "").trim();
 
-  return NextResponse.json({ text, website });
+  return NextResponse.json({ text: cleanText, website });
 }
