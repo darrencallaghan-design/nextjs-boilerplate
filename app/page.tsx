@@ -1529,7 +1529,7 @@ export default function EngineAgent() {
       setStatus({ msg: `Orchestrator failed: ${(err as Error).message}`, cls: "err" });
       addLog("Orchestrator failed — falling back to sequential mode", "err");
       // Fallback to sequential
-      runWorkflowFromList(activeProfile);
+      runWorkflowFromList(activeProfile ?? undefined);
     }
   };
 
