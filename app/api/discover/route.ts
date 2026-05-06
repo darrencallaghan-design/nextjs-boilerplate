@@ -57,17 +57,22 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ drafts: data || [] });
 }
 
-// PATCH /api/discover — update status of an auto_draft (sent | dismissed)
+// PATCH /api/discover — update status of an auto_draft
+// status: "sent" | "dismissed"
+// dismiss_reason: "wrong_org" (exclude permanently) | "bad_draft" (org stays in pool)
 export async function PATCH(req: NextRequest) {
-  const { id, status } = await req.json();
+  const { id, status, dismiss_reason } = await req.json();
 
   if (!id || !status) {
     return NextResponse.json({ error: "Missing id or status" }, { status: 400 });
   }
 
+  const update: Record<string, string> = { status };
+  if (dismiss_reason) update.dismiss_reason = dismiss_reason;
+
   const { error } = await supabase
     .from("auto_drafts")
-    .update({ status })
+    .update(update)
     .eq("id", id);
 
   if (error) {

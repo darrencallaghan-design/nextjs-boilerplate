@@ -71,7 +71,9 @@ async function discoverOrgs(
   const dayOfWeek = new Date().getDay();
   const category = SMERF_CATEGORIES[dayOfWeek % SMERF_CATEGORIES.length];
 
-  const alreadyIn = existingOrgs.slice(0, 100).join(", ") || "none yet";
+  // Pass full list — truncate by character length to stay within prompt limits, not by count
+  const alreadyInFull = existingOrgs.join(", ");
+  const alreadyIn = alreadyInFull.length > 6000 ? alreadyInFull.slice(0, 6000) + " ... (more excluded)" : alreadyInFull || "none yet";
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -318,30 +320,38 @@ export async function GET(req: NextRequest) {
 
       if ((todayCount || 0) > 0) continue;
 
-      // Get existing orgs to deduplicate — pull from BOTH contacted pipeline AND all previous discoveries
+      // Build full exclusion list — no cap
+      // Exclude: all contacted orgs + all previous discoveries EXCEPT "bad_draft" dismissals
+      // (bad_draft = org is still valid, just the email was poor — keep it in the discovery pool)
       const [{ data: contacted }, { data: previousDiscoveries }] = await Promise.all([
         db().from("report_entries").select("organization").eq("rep_name", rep.rep_name),
-        db().from("auto_drafts").select("org_name").eq("rep_name", rep.rep_name),
+        db().from("auto_drafts")
+          .select("org_name, status, dismiss_reason")
+          .eq("rep_name", rep.rep_name)
+          .or("status.eq.sent,status.eq.pending,and(status.eq.dismissed,dismiss_reason.neq.bad_draft),and(status.eq.dismissed,dismiss_reason.is.null)"),
       ]);
       const existingOrgs = [...new Set([
         ...(contacted || []).map((e: { organization: string }) => e.organization),
         ...(previousDiscoveries || []).map((e: { org_name: string }) => e.org_name),
       ])];
 
-      // Build a normalised lookup set for hard post-filter deduplication
+      // Normalise for hard post-filter — strips articles, punctuation, case
       const normalize = (s: string) => s.toLowerCase().replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
       const existingNorm = new Set(existingOrgs.map(normalize));
+
+      // Snapshot segment focus at discovery time for audit trail
+      const segmentSnapshot = (rep.segment_focus || "").substring(0, 500);
 
       // Build style context for email drafting
       const styleContext = rep.writing_sample
         ? `You are ghostwriting for ${rep.rep_name} at Engine. Match their exact voice:\n---\n${rep.writing_sample.substring(0, 600)}\n---\nStyle: ${rep.extracted_style || ""}`
         : `You are writing outreach for ${rep.rep_name} at Engine, a hotel booking platform.`;
 
-      // Step 1: Discover new orgs — ask for extras to absorb any that fail the hard filter
+      // Step 1: Ask for count*3 candidates so hard filter has enough to work with
       const count = rep.discovery_count || 3;
-      const newOrgsRaw = await discoverOrgs(rep.rep_name, rep.segment_focus || "", existingOrgs, count + 2);
+      const newOrgsRaw = await discoverOrgs(rep.rep_name, rep.segment_focus || "", existingOrgs, count * 3);
 
-      // Hard dedup — drop anything whose normalised name matches an existing org
+      // Hard dedup — DB is the source of truth, not Claude's prompt compliance
       const newOrgs = newOrgsRaw.filter(o => !existingNorm.has(normalize(o.name))).slice(0, count);
       if (!newOrgs.length) continue;
 
@@ -393,6 +403,7 @@ export async function GET(req: NextRequest) {
               research,
               website,
               status: "pending",
+              segment_snapshot: segmentSnapshot,
             });
 
             await sleep(500);

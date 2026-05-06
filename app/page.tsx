@@ -3829,11 +3829,21 @@ SUBJECT: Re: ${entry.subjectLine}
                                     </button>
                                     <button
                                       onClick={async () => {
-                                        await fetch("/api/discover", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: draft.id, status: "dismissed" }) });
+                                        await fetch("/api/discover", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: draft.id, status: "dismissed", dismiss_reason: "wrong_org" }) });
                                         setAutoDrafts(prev => prev.filter(d => d.id !== draft.id));
                                       }}
+                                      title="Wrong org — exclude this org permanently from discovery"
                                       style={{ padding: "7px 14px", background: "none", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 7, fontFamily: "inherit", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                      Dismiss
+                                      ✕ Wrong org
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        await fetch("/api/discover", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: draft.id, status: "dismissed", dismiss_reason: "bad_draft" }) });
+                                        setAutoDrafts(prev => prev.filter(d => d.id !== draft.id));
+                                      }}
+                                      title="Bad draft — org is still valid, rediscover with a better email tomorrow"
+                                      style={{ padding: "7px 14px", background: "none", color: INFO, border: `1px solid ${INFO}`, borderRadius: 7, fontFamily: "inherit", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                      ↻ Bad draft
                                     </button>
                                   </div>
                                 </div>
