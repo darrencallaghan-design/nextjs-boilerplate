@@ -80,6 +80,7 @@ interface ReportEntry {
   followUp3Sent: boolean;
   notes: string;
   subjectVariant?: "A" | "B";  // which subject was sent (for A/B tracking)
+  source?: string;              // "Daily Discovery" for cron-sourced entries, null for manual
 }
 
 interface SentItem {
@@ -1387,6 +1388,7 @@ export default function EngineAgent() {
             followUp3Due: e.follow_up_3_due || null,
             followUp3Sent: e.follow_up_3_sent || false,
             notes: e.notes || "",
+            source: (e.source as string) || null,
           }));
           setReportEntries(mapped);
         }
@@ -3824,8 +3826,37 @@ SUBJECT: Re: ${entry.subjectLine}
                                       onClick={() => {
                                         const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(draft.contact_email)}&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
                                         window.open(gmailUrl, "_blank");
-                                        // Mark as sent
+                                        // Mark auto_draft as sent
                                         fetch("/api/discover", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: draft.id, status: "sent" }) });
+                                        // Create a report_entry so it appears in Activity Log tagged as Daily Discovery
+                                        const today = new Date();
+                                        const fu1 = new Date(today); fu1.setDate(today.getDate() + 5);
+                                        const fu2 = new Date(today); fu2.setDate(today.getDate() + 9);
+                                        const fu3 = new Date(today); fu3.setDate(today.getDate() + 15);
+                                        const newEntry: ReportEntry = {
+                                          id: crypto.randomUUID(),
+                                          repName: styleProfile?.repName || "",
+                                          wave: waveNumber,
+                                          smerfCategory: draft.org_type || "SMERF",
+                                          organization: draft.org_name,
+                                          contactName: draft.contact_name,
+                                          title: draft.contact_title,
+                                          email: draft.contact_email,
+                                          subjectLine: draft.subject,
+                                          dateSent: today.toISOString().slice(0, 10),
+                                          status: "Sent",
+                                          stage: "Outreach" as DealStage,
+                                          followUpDue: fu1.toISOString().slice(0, 10),
+                                          followUpSent: false,
+                                          followUp2Due: fu2.toISOString().slice(0, 10),
+                                          followUp2Sent: false,
+                                          followUp3Due: fu3.toISOString().slice(0, 10),
+                                          followUp3Sent: false,
+                                          notes: draft.website ? `Website: ${draft.website}` : "",
+                                          source: "Daily Discovery",
+                                        };
+                                        fetch("/api/reports", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newEntry) });
+                                        setReportEntries(prev => [newEntry, ...prev]);
                                         setAutoDrafts(prev => prev.filter(d => d.id !== draft.id));
                                       }}
                                       style={{ padding: "7px 14px", background: ACCENT, color: "#fff", border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -4050,6 +4081,9 @@ SUBJECT: Re: ${entry.subjectLine}
                               <div onMouseEnter={() => lookupCbOverlap(entry.organization)}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                   <div style={{ fontSize: 12, color: TEXT, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 4 }} title={entry.organization}>{entry.organization}</div>
+                                  {entry.source === "Daily Discovery" && (
+                                    <span title="Sourced by Daily Discovery cron" style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: ACCENT, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap", flexShrink: 0 }}>⚡ Discovery</span>
+                                  )}
                                   {isDuplicate && <span title={`${orgCounts[entry.organization]} entries for this org`} style={{ fontSize: 9, fontWeight: 700, color: "#7C3AED", background: "rgba(124,58,237,0.1)", borderRadius: 10, padding: "1px 5px", whiteSpace: "nowrap", flexShrink: 0 }}>×{orgCounts[entry.organization]}</span>}
                                   {cbOverlaps[entry.organization]?.count > 0 && (
                                     <span

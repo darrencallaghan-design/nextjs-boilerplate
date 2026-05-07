@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
     follow_up_3_due: e.followUp3Due || null,
     follow_up_3_sent: e.followUp3Sent || false,
     notes: e.notes || "",
+    source: e.source || null,
   }));
 
   const { error } = await supabase
