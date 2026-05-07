@@ -58,11 +58,34 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
+  // Update the draft status
   const { error } = await db()
     .from("drafted_followups")
     .update({ status })
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // When marked sent, write back to report_entries so the cron doesn't re-draft tomorrow
+  if (status === "sent") {
+    const { data: draft } = await db()
+      .from("drafted_followups")
+      .select("entry_id, fu_num")
+      .eq("id", id)
+      .single();
+
+    if (draft?.entry_id && draft?.fu_num) {
+      const sentField =
+        draft.fu_num === 1 ? "follow_up_sent" :
+        draft.fu_num === 2 ? "follow_up_2_sent" :
+        "follow_up_3_sent";
+
+      await db()
+        .from("report_entries")
+        .update({ [sentField]: true })
+        .eq("id", draft.entry_id);
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

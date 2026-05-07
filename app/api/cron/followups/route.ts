@@ -180,16 +180,23 @@ export async function GET(req: NextRequest) {
 
   if (!dueEntries.length) return NextResponse.json({ drafted: 0, message: "No follow-ups due" });
 
-  // Skip entries that already have a pending draft
+  // Skip entries that already have a pending OR sent draft
+  // "sent" guard is a secondary safety net — the primary fix is PATCH writing back to report_entries,
+  // but if that write fails for any reason this prevents the same FU being drafted again
   const dueEntryIds = dueEntries.map(d => d.entry.id as string);
   const { data: existingDrafts } = await db()
     .from("drafted_followups")
-    .select("entry_id")
+    .select("entry_id, fu_num, status")
     .in("entry_id", dueEntryIds)
-    .eq("status", "pending");
+    .in("status", ["pending", "sent"]);
 
-  const alreadyDrafted = new Set((existingDrafts || []).map(d => d.entry_id));
-  const toDraft = dueEntries.filter(d => !alreadyDrafted.has(d.entry.id as string));
+  // Key is entry_id + fu_num so different FU numbers for the same entry are independent
+  const alreadyDrafted = new Set(
+    (existingDrafts || []).map(d => `${d.entry_id}:${d.fu_num}`)
+  );
+  const toDraft = dueEntries.filter(
+    d => !alreadyDrafted.has(`${d.entry.id as string}:${d.fuNum}`)
+  );
 
   if (!toDraft.length) {
     return NextResponse.json({ drafted: 0, message: `All ${dueEntries.length} due follow-ups already have pending drafts` });

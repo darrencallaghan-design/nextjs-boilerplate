@@ -3797,9 +3797,13 @@ SUBJECT: Re: ${entry.subjectLine}
                           </div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                             {autoDrafts.map(draft => (
-                              <div key={draft.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", borderLeft: `3px solid ${ACCENT}` }}>
+                              <div key={draft.id} style={{ background: "rgba(253,75,35,0.02)", border: `1px solid rgba(253,75,35,0.2)`, borderRadius: 10, padding: "14px 16px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", borderLeft: `3px solid ${ACCENT}` }}>
                                 <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
                                   <div style={{ flex: 1, minWidth: 0 }}>
+                                    {/* Daily Discovery label — always visible on the card */}
+                                    <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 7, padding: "2px 8px", borderRadius: 20, background: ACCENT }}>
+                                      <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: "0.07em", textTransform: "uppercase" }}>⚡ Daily Discovery · Step 1</span>
+                                    </div>
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                                       <span style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{draft.contact_name || "Contact"}</span>
                                       <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>·</span>
