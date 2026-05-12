@@ -1282,7 +1282,7 @@ export default function EngineAgent() {
 
       let brief: PitchBrief | null = null;
       let attempts = 0;
-      const maxAttempts = 30; // up to 60 seconds of polling
+      const maxAttempts = 75; // up to 150 seconds of polling
 
       while (attempts < maxAttempts) {
         await new Promise(r => setTimeout(r, 2000)); // wait 2 seconds between polls
