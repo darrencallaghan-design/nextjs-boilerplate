@@ -1260,8 +1260,8 @@ export default function EngineAgent() {
     }, 6000);
 
     try {
-      // Step 1: Start the research job — returns immediately with a jobId
-      const startRes = await fetch("/api/partner-research", {
+      // POST — returns NDJSON: one line containing { brief } or { error }
+      const res = await fetch("/api/partner-research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1272,37 +1272,25 @@ export default function EngineAgent() {
           repName: styleProfile?.repName || "",
         }),
       });
-      if (!startRes.ok) throw new Error(`Request failed (${startRes.status})`);
-      const startData = await startRes.json();
-      if (startData.error) throw new Error(startData.error);
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
 
-      // Step 2: Poll for the result
-      const jobId = startData.jobId;
-      if (!jobId) throw new Error("No job ID returned");
-
+      // Read the NDJSON response — find the line containing the brief
+      const text = await res.text();
       let brief: PitchBrief | null = null;
-      let attempts = 0;
-      const maxAttempts = 75; // up to 150 seconds of polling
-
-      while (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 2000)); // wait 2 seconds between polls
-        attempts++;
-
-        const pollRes = await fetch(`/api/partner-research?jobId=${encodeURIComponent(jobId)}`);
-        if (!pollRes.ok) continue; // keep trying on transient errors
-
-        const pollData = await pollRes.json();
-        if (pollData.status === "done" && pollData.brief) {
-          brief = pollData.brief as PitchBrief;
-          break;
+      for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.brief) { brief = parsed.brief as PitchBrief; break; }
+        } catch (parseErr) {
+          // Skip non-JSON lines (Anthropic SSE bytes forwarded to client)
+          if (String(parseErr).startsWith("Error:")) throw parseErr;
         }
-        if (pollData.status === "error") {
-          throw new Error(pollData.error || "Research failed");
-        }
-        // status === "processing" — keep polling
       }
 
-      if (!brief) throw new Error("Research timed out — please try again");
+      if (!brief) throw new Error("Research returned no data — please try again");
 
       setPitchBrief(brief);
       const newId = saveBrief(brief, pitchCompany.trim(), pitchDomain.trim());
