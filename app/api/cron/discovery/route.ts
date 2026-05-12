@@ -303,20 +303,8 @@ export async function GET(req: NextRequest) {
     .select("rep_name, segment_focus, discovery_count, writing_sample, extracted_style, edit_examples")
     .eq("discovery_enabled", true);
 
-  // Debug: return full query result so we can see exactly what's happening
-  if (error) return NextResponse.json({ error: error.message, debug: "query_error" }, { status: 500 });
-  if (!reps?.length) {
-    // Also fetch all reps (no filter) to see what's in the table
-    const { data: allReps, error: allError } = await db()
-      .from("rep_profiles")
-      .select("rep_name, discovery_enabled, discovery_count");
-    return NextResponse.json({
-      ok: true,
-      message: "No reps with discovery enabled",
-      debug_all_reps: allReps,
-      debug_all_error: allError?.message,
-    });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!reps?.length) return NextResponse.json({ ok: true, message: "No reps with discovery enabled" });
 
   // Return immediately — process in background
   after(async () => {
