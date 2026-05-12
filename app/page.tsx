@@ -623,6 +623,9 @@ function SegmentViewer({ profile, onUpdate, onClose }: { profile: StyleProfile; 
   const [segTypes, setSegTypes] = useState(parsedSeg.types);
   const [segExamples, setSegExamples] = useState(parsedSeg.examples);
   const [segTravel, setSegTravel] = useState(parsedSeg.travel);
+  // Track discoveryEnabled in local state so Save always reads the current value
+  // (not the prop, which may not have updated yet if toggle and Save are clicked quickly)
+  const [discoveryOn, setDiscoveryOn] = useState(profile.discoveryEnabled ?? false);
 
   const fieldStyle = (val: string) => ({
     width: "100%", background: SURFACE, border: "none", borderRadius: 6,
@@ -690,20 +693,20 @@ function SegmentViewer({ profile, onUpdate, onClose }: { profile: StyleProfile; 
               </div>
             </div>
             <button
-              onClick={() => onUpdate({ ...profile, discoveryEnabled: !(profile.discoveryEnabled ?? false) })}
+              onClick={() => setDiscoveryOn(prev => !prev)}
               style={{
                 flexShrink: 0, marginLeft: 16, width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
-                background: (profile.discoveryEnabled ?? false) ? SUCCESS : BORDER,
+                background: discoveryOn ? SUCCESS : BORDER,
                 position: "relative", transition: "background 0.2s",
               }}>
               <span style={{
-                position: "absolute", top: 3, left: (profile.discoveryEnabled ?? false) ? 23 : 3,
+                position: "absolute", top: 3, left: discoveryOn ? 23 : 3,
                 width: 18, height: 18, borderRadius: "50%", background: "#fff",
                 transition: "left 0.2s", display: "block",
               }} />
             </button>
           </div>
-          {(profile.discoveryEnabled ?? false) && (
+          {discoveryOn && (
             <div style={{ marginTop: 8, fontSize: 11, color: SUCCESS, fontWeight: 600 }}>
               ✓ Active — drafts will appear in your Follow-Ups tab each morning
             </div>
@@ -715,7 +718,7 @@ function SegmentViewer({ profile, onUpdate, onClose }: { profile: StyleProfile; 
             Cancel
           </button>
           <button
-            onClick={() => { onUpdate({ ...profile, segmentFocus: formatSegment(segTypes, segExamples, segTravel) }); onClose(); }}
+            onClick={() => { onUpdate({ ...profile, segmentFocus: formatSegment(segTypes, segExamples, segTravel), discoveryEnabled: discoveryOn }); onClose(); }}
             style={{ flex: 2, padding: "11px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer" }}>
             Save Segment Focus
           </button>
