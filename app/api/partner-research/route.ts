@@ -68,7 +68,7 @@ async function doResearch(
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000); // 2-min hard abort
+    const timeout = setTimeout(() => controller.abort(), 180_000); // 3-min hard abort
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -82,7 +82,7 @@ async function doResearch(
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 5000,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
           messages: [{ role: "user", content: prompt }],
         }),
       });
