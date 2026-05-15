@@ -2,7 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 
-const ACCENT = "#FD4B23";
+const ACCENT = "#F5A623";
+const ACCENT_TEXT = "#1A1A1A"; // dark text for yellow buttons
 const BG = "#F8F6F2";
 const SURFACE = "#FFFFFF";
 const BORDER = "#E8E5E0";
@@ -11,7 +12,7 @@ const TEXT = "#10121A";
 const TEXT_SECONDARY = "#616368";
 const SUCCESS = "#009262";
 const ERROR = "#E53935";
-const INFO = "#1476D8";
+const INFO = "#4BBFC4";
 
 const FALLBACK_ROLES = ["Executive Director", "VP of Programs", "Director of Events"];
 
@@ -444,7 +445,7 @@ Return a concise style guide (3-5 sentences) that can be used to write future em
         <button
           onClick={analyze}
           disabled={analyzing}
-          style={{ width: "100%", marginTop: 18, padding: "13px", background: analyzing ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: analyzing ? MUTED : "#fff", cursor: analyzing ? "not-allowed" : "pointer" }}>
+          style={{ width: "100%", marginTop: 18, padding: "13px", background: analyzing ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: analyzing ? MUTED : ACCENT_TEXT, cursor: analyzing ? "not-allowed" : "pointer" }}>
           {analyzing ? "Analyzing your style…" : "Save My Style & Start"}
         </button>
 
@@ -562,7 +563,7 @@ Return a concise style guide (3-5 sentences) that can be used to write future em
               <button onClick={onClose} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 8, fontFamily: "inherit", fontSize: 13, color: TEXT_SECONDARY, cursor: "pointer" }}>
                 Cancel
               </button>
-              <button onClick={reanalyze} disabled={analyzing} style={{ flex: 2, padding: "11px", background: analyzing ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: analyzing ? MUTED : "#fff", cursor: analyzing ? "not-allowed" : "pointer" }}>
+              <button onClick={reanalyze} disabled={analyzing} style={{ flex: 2, padding: "11px", background: analyzing ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: analyzing ? MUTED : ACCENT_TEXT, cursor: analyzing ? "not-allowed" : "pointer" }}>
                 {analyzing ? "Updating style…" : additionalSample.trim() ? "Add Sample & Reanalyze" : "Reanalyze My Style"}
               </button>
             </div>
@@ -719,7 +720,7 @@ function SegmentViewer({ profile, onUpdate, onClose }: { profile: StyleProfile; 
           </button>
           <button
             onClick={() => { onUpdate({ ...profile, segmentFocus: formatSegment(segTypes, segExamples, segTravel), discoveryEnabled: discoveryOn }); onClose(); }}
-            style={{ flex: 2, padding: "11px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer" }}>
+            style={{ flex: 2, padding: "11px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: ACCENT_TEXT, cursor: "pointer" }}>
             Save Segment Focus
           </button>
         </div>
@@ -2588,7 +2589,7 @@ SUBJECT: Re: ${entry.subjectLine}
                   setFollowUpPreview(null);
                   setFollowUpEditedBody("");
                 }}
-                style={{ flex: 2, padding: "11px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer" }}>
+                style={{ flex: 2, padding: "11px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: ACCENT_TEXT, cursor: "pointer" }}>
                 Open in Gmail & Mark Sent
               </button>
             </div>
@@ -2666,7 +2667,7 @@ SUBJECT: Re: ${entry.subjectLine}
                   <button onClick={() => setImportPreviewEntries(null)} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 8, fontFamily: "inherit", fontSize: 13, color: TEXT_SECONDARY, cursor: "pointer" }}>
                     Back
                   </button>
-                  <button onClick={confirmImportToReports} disabled={importLoading} style={{ flex: 2, padding: "11px", background: importLoading ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: importLoading ? MUTED : "#fff", cursor: importLoading ? "not-allowed" : "pointer" }}>
+                  <button onClick={confirmImportToReports} disabled={importLoading} style={{ flex: 2, padding: "11px", background: importLoading ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: importLoading ? MUTED : ACCENT_TEXT, cursor: importLoading ? "not-allowed" : "pointer" }}>
                     {importLoading ? "Importing…" : `Import ${importPreviewEntries.length} Contacts`}
                   </button>
                 </div>
@@ -2689,13 +2690,13 @@ SUBJECT: Re: ${entry.subjectLine}
                 onClick={() => setShowStyleViewer(true)}
                 style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "6px 12px", color: TEXT_SECONDARY, fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}>
                 <span style={{ fontSize: 13 }}>✎</span> {styleProfile.repName}'s Style
-                {styleProfile.editExamples.length > 0 && <span style={{ background: ACCENT, color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 10, fontWeight: 600 }}>{styleProfile.editExamples.length} edits</span>}
+                {styleProfile.editExamples.length > 0 && <span style={{ background: ACCENT, color: ACCENT_TEXT, borderRadius: 10, padding: "1px 6px", fontSize: 10, fontWeight: 600 }}>{styleProfile.editExamples.length} edits</span>}
               </button>
               <button
                 onClick={() => setShowSegmentViewer(true)}
                 style={{ background: styleProfile.segmentFocus ? BG : "rgba(253,75,35,0.06)", border: `1px solid ${styleProfile.segmentFocus ? BORDER : "rgba(253,75,35,0.35)"}`, borderRadius: 6, padding: "6px 12px", color: styleProfile.segmentFocus ? TEXT_SECONDARY : ACCENT, fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}>
                 <span style={{ fontSize: 11 }}>◎</span> Segment Focus
-                {!styleProfile.segmentFocus && <span style={{ background: ACCENT, color: "#fff", borderRadius: 10, padding: "1px 5px", fontSize: 9, fontWeight: 700 }}>!</span>}
+                {!styleProfile.segmentFocus && <span style={{ background: ACCENT, color: ACCENT_TEXT, borderRadius: 10, padding: "1px 5px", fontSize: 9, fontWeight: 700 }}>!</span>}
                 {styleProfile.segmentFocus && <span style={{ background: SUCCESS, color: "#fff", borderRadius: 10, padding: "1px 5px", fontSize: 9, fontWeight: 700 }}>✓</span>}
               </button>
             </div>
@@ -2778,7 +2779,7 @@ SUBJECT: Re: ${entry.subjectLine}
                     style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 12px", color: TEXT, fontFamily: "inherit", fontSize: 13, outline: "none", resize: "vertical", boxSizing: "border-box" }} />
                 </div>
                 <button onClick={runPartnerResearch} disabled={pitchLoading || !pitchCompany.trim()}
-                  style={{ width: "100%", padding: "10px", background: pitchLoading || !pitchCompany.trim() ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: pitchLoading || !pitchCompany.trim() ? MUTED : "#fff", cursor: pitchLoading || !pitchCompany.trim() ? "not-allowed" : "pointer" }}>
+                  style={{ width: "100%", padding: "10px", background: pitchLoading || !pitchCompany.trim() ? BORDER : ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: pitchLoading || !pitchCompany.trim() ? MUTED : ACCENT_TEXT, cursor: pitchLoading || !pitchCompany.trim() ? "not-allowed" : "pointer" }}>
                   {pitchLoading ? pitchLoadingMsg : "Build Partner Brief"}
                 </button>
                 {pitchError && <div style={{ fontSize: 12, color: ERROR, background: "rgba(229,57,53,0.06)", border: `1px solid rgba(229,57,53,0.15)`, borderRadius: 6, padding: "8px 12px" }}>{pitchError}</div>}
@@ -2856,7 +2857,7 @@ SUBJECT: Re: ${entry.subjectLine}
                       <span style={{ fontSize: 11, color: MUTED }}>Score: {pitchBrief.partnershipFit.score}/100</span>
                       <button
                         onClick={() => exportBriefPDF(pitchBrief)}
-                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 12, fontWeight: 600, color: "#fff", cursor: "pointer", marginTop: 4 }}>
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 12, fontWeight: 600, color: ACCENT_TEXT, cursor: "pointer", marginTop: 4 }}>
                         ⬇ Download PDF
                       </button>
                       <button
@@ -2996,7 +2997,7 @@ SUBJECT: Re: ${entry.subjectLine}
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => setShowSetup(true)} style={{ padding: "14px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer" }}>
+                  <button onClick={() => setShowSetup(true)} style={{ padding: "14px", background: ACCENT, border: "none", borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: ACCENT_TEXT, cursor: "pointer" }}>
                     Set Up Your Style Profile
                   </button>
                 )}
@@ -3016,7 +3017,7 @@ SUBJECT: Re: ${entry.subjectLine}
                   const isActive = val === "list" ? listMode : val === "batch" ? (batchMode && !listMode) : (!batchMode && !listMode);
                   return (
                     <button key={val} onClick={() => { setListMode(val === "list"); setBatchMode(val === "batch"); }}
-                      style={{ padding: "4px 10px", fontSize: 11, fontFamily: "inherit", border: "none", cursor: "pointer", background: isActive ? ACCENT : "transparent", color: isActive ? "#fff" : MUTED, fontWeight: isActive ? 600 : 400 }}>
+                      style={{ padding: "4px 10px", fontSize: 11, fontFamily: "inherit", border: "none", cursor: "pointer", background: isActive ? ACCENT : "transparent", color: isActive ? ACCENT_TEXT : MUTED, fontWeight: isActive ? 600 : 400 }}>
                       {label}
                     </button>
                   );
@@ -3096,7 +3097,7 @@ SUBJECT: Re: ${entry.subjectLine}
                     ) : !running ? (
                       <button
                         onClick={handleRunClick}
-                        style={{ width: "100%", padding: "11px 12px", background: ACCENT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 500, color: "#fff", cursor: "pointer", textAlign: "left", lineHeight: 1.4 }}>
+                        style={{ width: "100%", padding: "11px 12px", background: ACCENT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 500, color: ACCENT_TEXT, cursor: "pointer", textAlign: "left", lineHeight: 1.4 }}>
                         <div style={{ fontWeight: 600 }}>✉ Generate New Emails</div>
                         <div style={{ fontSize: 11, marginTop: 2, opacity: 0.85 }}>{useParallelMode ? "All orgs run simultaneously via agent team" : "Research each org and draft outreach — skips anyone already in your pipeline"}</div>
                       </button>
@@ -3124,7 +3125,7 @@ SUBJECT: Re: ${entry.subjectLine}
                   </button>
                 ) : (
                   <button onClick={handleRunClick} disabled={running || !orgName}
-                    style={{ width: "100%", padding: "12px", background: running || !orgName ? BORDER : ACCENT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: running || !orgName ? MUTED : "#fff", cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
+                    style={{ width: "100%", padding: "12px", background: running || !orgName ? BORDER : ACCENT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: running || !orgName ? MUTED : ACCENT_TEXT, cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
                     {running ? "Running…" : batchMode ? "Find 10 Orgs & Draft Emails" : styleProfile ? "Run Full Workflow" : "Set Up Style & Run"}
                   </button>
                 )}
@@ -3217,7 +3218,7 @@ SUBJECT: Re: ${entry.subjectLine}
                               style={{ fontSize: 12, padding: "4px 8px", border: `1px solid ${ACCENT}`, borderRadius: 6, fontFamily: "inherit", outline: "none", width: 220, color: TEXT, background: SURFACE }}
                             />
                             <button onClick={() => saveEmailEdit(i)}
-                              style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", background: ACCENT, color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
+                              style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", background: ACCENT, color: ACCENT_TEXT, border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
                               Save
                             </button>
                             <button onClick={() => { setEditingEmail(null); setEmailEditText(""); }}
@@ -3301,7 +3302,7 @@ SUBJECT: Re: ${entry.subjectLine}
                       />
                       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                         <button onClick={() => saveEdit(i)}
-                          style={{ padding: "8px 16px", background: ACCENT, color: "#fff", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                          style={{ padding: "8px 16px", background: ACCENT, color: ACCENT_TEXT, border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
                           Save & Update Style
                         </button>
                         <button onClick={() => setEditingDraft(null)}
@@ -3322,7 +3323,7 @@ SUBJECT: Re: ${entry.subjectLine}
                             onClick={() => d.email ? openInGmail(d, i, true) : undefined}
                             disabled={!d.email}
                             title={!d.email ? "Add an email address before sending" : d.emailVerified ? `Verified email — found on ${d.contactSource}` : "Email unverified — confirm it's correct before sending"}
-                            style={{ padding: "8px 16px", background: d.email ? ACCENT : BORDER, color: d.email ? "#fff" : MUTED, border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: d.email ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+                            style={{ padding: "8px 16px", background: d.email ? ACCENT : BORDER, color: d.email ? ACCENT_TEXT : MUTED, border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: d.email ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
                             {!d.email ? "✕ No Email" : "Open in Gmail"}
                           </button>
                           <button onClick={() => startEditing(i)}
@@ -3421,7 +3422,7 @@ SUBJECT: Re: ${entry.subjectLine}
                       {overdueEntries.length > 0 && (
                         <button
                           onClick={() => { setLogFilter(logFilter === "overdue" ? "all" : "overdue"); setReportSubTab("log"); }}
-                          style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontFamily: "inherit", background: logFilter === "overdue" ? ACCENT : "rgba(253,75,35,0.1)", color: logFilter === "overdue" ? "#fff" : ACCENT, transition: "all 0.15s" }}>
+                          style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontFamily: "inherit", background: logFilter === "overdue" ? ACCENT : "rgba(253,75,35,0.1)", color: logFilter === "overdue" ? ACCENT_TEXT : ACCENT, transition: "all 0.15s" }}>
                           ⚠ {overdueEntries.length} overdue
                         </button>
                       )}
@@ -3461,7 +3462,7 @@ SUBJECT: Re: ${entry.subjectLine}
                         style={{ padding: "10px 18px", fontSize: 13, fontWeight: reportSubTab === id ? 600 : 400, color: reportSubTab === id ? TEXT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${reportSubTab === id ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
                         {label}
                         {id === "followups" && (overdueEntries.length + dueThisWeek.length + autoDrafts.length + preDrafts.length) > 0 && (
-                          <span style={{ background: autoDrafts.length > 0 ? ACCENT : overdueEntries.length > 0 ? ACCENT : INFO, color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20, lineHeight: 1.5 }}>
+                          <span style={{ background: autoDrafts.length > 0 ? ACCENT : overdueEntries.length > 0 ? ACCENT : INFO, color: autoDrafts.length > 0 || overdueEntries.length > 0 ? ACCENT_TEXT : "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20, lineHeight: 1.5 }}>
                             {overdueEntries.length + dueThisWeek.length + autoDrafts.length + preDrafts.length}
                           </span>
                         )}
@@ -3471,7 +3472,7 @@ SUBJECT: Re: ${entry.subjectLine}
                       <div style={{ display: "flex", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, overflow: "hidden", marginLeft: 16 }}>
                         {([["mine", `My Pipeline`], ["all", "All Reps"]] as const).map(([val, label]) => (
                           <button key={val} onClick={() => setRepView(val)}
-                            style={{ padding: "4px 12px", fontSize: 11, fontFamily: "inherit", border: "none", cursor: "pointer", background: repView === val ? ACCENT : "transparent", color: repView === val ? "#fff" : MUTED, fontWeight: repView === val ? 600 : 400 }}>
+                            style={{ padding: "4px 12px", fontSize: 11, fontFamily: "inherit", border: "none", cursor: "pointer", background: repView === val ? ACCENT : "transparent", color: repView === val ? ACCENT_TEXT : MUTED, fontWeight: repView === val ? 600 : 400 }}>
                             {label}
                           </button>
                         ))}
@@ -3719,7 +3720,7 @@ SUBJECT: Re: ${entry.subjectLine}
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     {/* Daily Discovery label — always visible on the card */}
                                     <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 7, padding: "2px 8px", borderRadius: 20, background: ACCENT }}>
-                                      <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: "0.07em", textTransform: "uppercase" }}>⚡ Daily Discovery · Step 1</span>
+                                      <span style={{ fontSize: 9, fontWeight: 700, color: ACCENT_TEXT, letterSpacing: "0.07em", textTransform: "uppercase" }}>⚡ Daily Discovery · Step 1</span>
                                     </div>
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                                       <span style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{draft.contact_name || "Contact"}</span>
@@ -3774,7 +3775,7 @@ SUBJECT: Re: ${entry.subjectLine}
                                         setReportEntries(prev => [newEntry, ...prev]);
                                         setAutoDrafts(prev => prev.filter(d => d.id !== draft.id));
                                       }}
-                                      style={{ padding: "7px 14px", background: ACCENT, color: "#fff", border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                      style={{ padding: "7px 14px", background: ACCENT, color: ACCENT_TEXT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
                                       ✉ Send in Gmail
                                     </button>
                                     <button
@@ -3997,7 +3998,7 @@ SUBJECT: Re: ${entry.subjectLine}
                                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                   <div style={{ fontSize: 12, color: TEXT, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 4 }} title={entry.organization}>{entry.organization}</div>
                                   {entry.source === "Daily Discovery" && (
-                                    <span title="Sourced by Daily Discovery cron" style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: ACCENT, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap", flexShrink: 0 }}>⚡ Discovery</span>
+                                    <span title="Sourced by Daily Discovery cron" style={{ fontSize: 9, fontWeight: 700, color: ACCENT_TEXT, background: ACCENT, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap", flexShrink: 0 }}>⚡ Discovery</span>
                                   )}
                                   {isDuplicate && <span title={`${orgCounts[entry.organization]} entries for this org`} style={{ fontSize: 9, fontWeight: 700, color: "#7C3AED", background: "rgba(124,58,237,0.1)", borderRadius: 10, padding: "1px 5px", whiteSpace: "nowrap", flexShrink: 0 }}>×{orgCounts[entry.organization]}</span>}
                                   {cbOverlaps[entry.organization]?.count > 0 && (
@@ -4054,7 +4055,7 @@ SUBJECT: Re: ${entry.subjectLine}
                                     <button
                                       onClick={() => generateFollowUp(entry, nfu.num)}
                                       disabled={generatingFollowUp === entry.id}
-                                      style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", background: generatingFollowUp === entry.id ? BORDER : ACCENT, color: generatingFollowUp === entry.id ? MUTED : "#fff", border: "none", borderRadius: 6, cursor: generatingFollowUp === entry.id ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                                      style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", background: generatingFollowUp === entry.id ? BORDER : ACCENT, color: generatingFollowUp === entry.id ? MUTED : ACCENT_TEXT, border: "none", borderRadius: 6, cursor: generatingFollowUp === entry.id ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
                                       {generatingFollowUp === entry.id ? "Drafting…" : `Draft ${nfu.label}`}
                                     </button>
                                   );
