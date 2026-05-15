@@ -3626,17 +3626,23 @@ SUBJECT: Re: ${entry.subjectLine}
                               {/* Pipeline stages + Top org types side by side */}
                               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 0 }}>
                                 <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
-                                  <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Pipeline stages</div>
-                                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                    {stageBreakdown.map(({ stage, count }, i) => (
-                                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                        <div style={{ fontSize: 11, color: TEXT, width: 100, flexShrink: 0 }}>{stage}</div>
-                                        <div style={{ flex: 1, height: 7, background: BORDER, borderRadius: 4, overflow: "hidden" }}>
-                                          <div style={{ width: `${Math.round((count / Math.max(reportEntries.length, 1)) * 100)}%`, height: "100%", background: STAGE_COLORS[stage as DealStage]?.text || MUTED, borderRadius: 4 }} />
-                                        </div>
-                                        <div style={{ fontSize: 11, color: TEXT_SECONDARY, width: 20, textAlign: "right" }}>{count}</div>
-                                      </div>
-                                    ))}
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Pipeline — click to filter Activity Log</div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                    {stageBreakdown.map(({ stage, count }, i) => {
+                                      const sc = STAGE_COLORS[stage as DealStage];
+                                      const isActive = logFilter === stage;
+                                      return (
+                                        <button key={i}
+                                          onClick={() => { setLogFilter(isActive ? "all" : stage as DealStage); setReportSubTab("log"); }}
+                                          style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: `1px solid ${isActive ? sc?.text || BORDER : BORDER}`, background: isActive ? (sc?.bg || BG) : "transparent", cursor: count > 0 ? "pointer" : "default", fontFamily: "inherit", textAlign: "left", transition: "all 0.1s" }}>
+                                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: sc?.bg || BG, color: sc?.text || MUTED, flexShrink: 0, whiteSpace: "nowrap" }}>{stage}</span>
+                                          <div style={{ flex: 1, height: 6, background: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                                            <div style={{ width: `${Math.round((count / Math.max(reportEntries.filter(e => e.status === "Sent").length, 1)) * 100)}%`, height: "100%", background: sc?.text || MUTED, borderRadius: 4 }} />
+                                          </div>
+                                          <span style={{ fontSize: 12, fontWeight: 600, color: count > 0 ? (sc?.text || MUTED) : MUTED, width: 24, textAlign: "right", flexShrink: 0 }}>{count}</span>
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                                 <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
