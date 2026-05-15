@@ -82,6 +82,8 @@ interface ReportEntry {
   notes: string;
   subjectVariant?: "A" | "B";  // which subject was sent (for A/B tracking)
   source?: string;              // "Daily Discovery" for cron-sourced entries, null for manual
+  repliedAt?: string | null;   // ISO timestamp when prospect replied (set by reply detection cron)
+  replySnippet?: string | null; // first 300 chars of their reply
 }
 
 interface SentItem {
@@ -1404,6 +1406,8 @@ export default function EngineAgent() {
             followUp3Sent: e.follow_up_3_sent || false,
             notes: e.notes || "",
             source: (e.source as string) || null,
+            repliedAt: (e.replied_at as string) || null,
+            replySnippet: (e.reply_snippet as string) || null,
           }));
           setReportEntries(mapped);
         }
@@ -3461,11 +3465,15 @@ SUBJECT: Re: ${entry.subjectLine}
                       <button key={id} onClick={() => setReportSubTab(id)}
                         style={{ padding: "10px 18px", fontSize: 13, fontWeight: reportSubTab === id ? 600 : 400, color: reportSubTab === id ? TEXT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${reportSubTab === id ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
                         {label}
-                        {id === "followups" && (overdueEntries.length + dueThisWeek.length + autoDrafts.length + preDrafts.length) > 0 && (
-                          <span style={{ background: autoDrafts.length > 0 ? ACCENT : overdueEntries.length > 0 ? ACCENT : INFO, color: autoDrafts.length > 0 || overdueEntries.length > 0 ? ACCENT_TEXT : "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20, lineHeight: 1.5 }}>
-                            {overdueEntries.length + dueThisWeek.length + autoDrafts.length + preDrafts.length}
-                          </span>
-                        )}
+                        {id === "followups" && (() => {
+                          const repliedCount = visibleEntries.filter(e => e.repliedAt).length;
+                          const total = overdueEntries.length + dueThisWeek.length + autoDrafts.length + preDrafts.length + repliedCount;
+                          return total > 0 ? (
+                            <span style={{ background: repliedCount > 0 ? SUCCESS : autoDrafts.length > 0 ? ACCENT : overdueEntries.length > 0 ? ACCENT : INFO, color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20, lineHeight: 1.5 }}>
+                              {total}
+                            </span>
+                          ) : null;
+                        })()}
                       </button>
                     ))}
                     {styleProfile && (
@@ -3705,6 +3713,53 @@ SUBJECT: Re: ${entry.subjectLine}
                   ) : reportSubTab === "followups" ? (
                     /* Follow-Up Queue */
                     <div>
+                      {/* ── Replies Detected section ──────────────────────── */}
+                      {(() => {
+                        const repliedEntries = visibleEntries.filter(e => e.repliedAt);
+                        if (!repliedEntries.length) return null;
+                        return (
+                          <div style={{ marginBottom: 32 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: SUCCESS, textTransform: "uppercase", letterSpacing: "0.06em" }}>💬 Replies Detected</span>
+                              <span style={{ fontSize: 11, color: MUTED }}>— {repliedEntries.length} prospect{repliedEntries.length !== 1 ? "s" : ""} replied · stage moved to Discovery</span>
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {repliedEntries.map(entry => (
+                                <div key={entry.id} style={{ background: "rgba(0,146,98,0.03)", border: `1px solid rgba(0,146,98,0.25)`, borderRadius: 10, padding: "14px 16px", borderLeft: `3px solid ${SUCCESS}` }}>
+                                  <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                                        <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: SUCCESS, color: "#fff", letterSpacing: "0.06em", textTransform: "uppercase" }}>✓ Replied</span>
+                                        <span style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{entry.contactName}</span>
+                                        <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>·</span>
+                                        <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>{entry.organization}</span>
+                                        <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(20,118,216,0.1)", color: "#1476D8" }}>Discovery</span>
+                                      </div>
+                                      {entry.replySnippet && (
+                                        <div style={{ fontSize: 12, color: TEXT_SECONDARY, fontStyle: "italic", lineHeight: 1.5, marginTop: 4, padding: "8px 12px", background: "rgba(0,146,98,0.06)", borderRadius: 6, borderLeft: `2px solid ${SUCCESS}` }}>
+                                          "{entry.replySnippet.slice(0, 200)}{entry.replySnippet.length > 200 ? "…" : ""}"
+                                        </div>
+                                      )}
+                                      <div style={{ fontSize: 11, color: MUTED, marginTop: 6 }}>
+                                        Detected {entry.repliedAt ? new Date(entry.repliedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""} · {entry.email}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                                      <a
+                                        href={`https://mail.google.com/mail/#search/from%3A${encodeURIComponent(entry.email)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{ padding: "7px 14px", background: SUCCESS, color: "#fff", border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", display: "inline-block" }}>
+                                        View in Gmail →
+                                      </a>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {/* ── Discovered This Morning section ──────────────── */}
                       {autoDrafts.length > 0 && (
                         <div style={{ marginBottom: 32 }}>
@@ -3999,6 +4054,9 @@ SUBJECT: Re: ${entry.subjectLine}
                                   <div style={{ fontSize: 12, color: TEXT, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 4 }} title={entry.organization}>{entry.organization}</div>
                                   {entry.source === "Daily Discovery" && (
                                     <span title="Sourced by Daily Discovery cron" style={{ fontSize: 9, fontWeight: 700, color: ACCENT_TEXT, background: ACCENT, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap", flexShrink: 0 }}>⚡ Discovery</span>
+                                  )}
+                                  {entry.repliedAt && (
+                                    <span title={entry.replySnippet ? `Reply: "${entry.replySnippet.slice(0, 80)}…"` : "Prospect replied"} style={{ fontSize: 9, fontWeight: 700, color: "#fff", background: SUCCESS, borderRadius: 10, padding: "1px 6px", whiteSpace: "nowrap", flexShrink: 0, cursor: "default" }}>✓ Replied</span>
                                   )}
                                   {isDuplicate && <span title={`${orgCounts[entry.organization]} entries for this org`} style={{ fontSize: 9, fontWeight: 700, color: "#7C3AED", background: "rgba(124,58,237,0.1)", borderRadius: 10, padding: "1px 5px", whiteSpace: "nowrap", flexShrink: 0 }}>×{orgCounts[entry.organization]}</span>}
                                   {cbOverlaps[entry.organization]?.count > 0 && (

@@ -26,6 +26,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendEmail, gmailConfigured } from "@/lib/gmail";
 
 export const maxDuration = 300;
 
@@ -148,17 +149,22 @@ export async function GET(req: NextRequest) {
   tomorrow.setDate(today.getDate() + 1);
   const tomorrowStr = tomorrow.toISOString().slice(0, 10);
 
+  // AUTO_SEND_FOLLOWUPS=true → send emails directly via Gmail instead of just drafting
+  const autoSend = process.env.AUTO_SEND_FOLLOWUPS === "true" && gmailConfigured();
+
   // Find all entries with follow-ups due by tomorrow
   // Three cases:
   // 1. FU1 not sent and FU1 due <= tomorrow
   // 2. FU1 sent, FU2 not sent, FU2 due <= tomorrow
   // 3. FU2 sent, FU3 not sent, FU3 due <= tomorrow
+  // Note: exclude entries where the prospect already replied (replied_at IS NOT NULL)
   const { data: allSentEntries, error } = await db()
     .from("report_entries")
-    .select("id,contact_name,title,organization,subject_line,rep_name,follow_up_sent,follow_up_due,follow_up_2_sent,follow_up_2_due,follow_up_3_sent,follow_up_3_due,stage,status")
+    .select("id,contact_name,title,email,organization,subject_line,rep_name,follow_up_sent,follow_up_due,follow_up_2_sent,follow_up_2_due,follow_up_3_sent,follow_up_3_due,stage,status,replied_at")
     .eq("status", "Sent")
     .neq("stage", "Closed Won")
-    .neq("stage", "Closed Lost");
+    .neq("stage", "Closed Lost")
+    .is("replied_at", null); // skip prospects who already replied
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!allSentEntries?.length) return NextResponse.json({ drafted: 0, message: "No sent entries found" });
@@ -202,8 +208,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ drafted: 0, message: `All ${dueEntries.length} due follow-ups already have pending drafts` });
   }
 
-  // Draft each follow-up (sequentially to respect rate limits)
+  // Draft (and optionally auto-send) each follow-up sequentially
   let drafted = 0;
+  let autoSent = 0;
   const failed: string[] = [];
 
   for (const { entry, fuNum } of toDraft) {
@@ -223,17 +230,72 @@ export async function GET(req: NextRequest) {
         : `Follow-up ${fuNum} — ${entry.organization}`;
       const body = stripDashes(raw.replace(/^SUBJECT:\s*.+\n*/im, "").trim());
 
-      await db().from("drafted_followups").insert({
-        id: crypto.randomUUID(),
-        entry_id: entry.id,
-        fu_num: fuNum,
-        subject,
-        body,
-        rep_name: entry.rep_name || "",
-        status: "pending",
-      });
+      const draftId = crypto.randomUUID();
+      const now = new Date().toISOString();
 
-      drafted++;
+      if (autoSend && (entry.email as string)?.includes("@")) {
+        // ── Auto-send mode: send via Gmail, mark immediately as sent ──────
+        try {
+          await sendEmail({
+            to: entry.email as string,
+            subject,
+            body,
+            fromName: entry.rep_name as string || undefined,
+          });
+
+          // Save with status=sent and auto_sent=true
+          await db().from("drafted_followups").insert({
+            id: draftId,
+            entry_id: entry.id,
+            fu_num: fuNum,
+            subject,
+            body,
+            rep_name: entry.rep_name || "",
+            status: "sent",
+            auto_sent: true,
+            sent_at: now,
+          });
+
+          // Write back follow_up_X_sent so cron doesn't re-draft tomorrow
+          const sentField =
+            fuNum === 1 ? "follow_up_sent" :
+            fuNum === 2 ? "follow_up_2_sent" :
+            "follow_up_3_sent";
+
+          await db()
+            .from("report_entries")
+            .update({ [sentField]: true })
+            .eq("id", entry.id as string);
+
+          autoSent++;
+          console.log(`[followups] Auto-sent FU${fuNum} to ${entry.email} (${entry.organization})`);
+        } catch (sendErr) {
+          // Gmail send failed — fall back to drafting so rep can send manually
+          console.error(`[followups] Auto-send failed for ${entry.organization}, falling back to draft:`, sendErr);
+          await db().from("drafted_followups").insert({
+            id: draftId,
+            entry_id: entry.id,
+            fu_num: fuNum,
+            subject,
+            body,
+            rep_name: entry.rep_name || "",
+            status: "pending",
+          });
+          drafted++;
+        }
+      } else {
+        // ── Draft-only mode: leave as pending for rep to review ───────────
+        await db().from("drafted_followups").insert({
+          id: draftId,
+          entry_id: entry.id,
+          fu_num: fuNum,
+          subject,
+          body,
+          rep_name: entry.rep_name || "",
+          status: "pending",
+        });
+        drafted++;
+      }
     } catch {
       failed.push(entry.organization as string);
     }
@@ -243,6 +305,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     drafted,
+    autoSent,
+    autoSendMode: autoSend,
     skipped: alreadyDrafted.size,
     failed: failed.length,
     failedOrgs: failed,

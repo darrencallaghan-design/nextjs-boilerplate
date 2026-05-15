@@ -71,6 +71,8 @@ export async function PATCH(req: NextRequest) {
   if (updates.followUpDue !== undefined) dbUpdates.follow_up_due = updates.followUpDue;
   if (updates.followUp2Due !== undefined) dbUpdates.follow_up_2_due = updates.followUp2Due;
   if (updates.followUp3Due !== undefined) dbUpdates.follow_up_3_due = updates.followUp3Due;
+  if (updates.repliedAt !== undefined) dbUpdates.replied_at = updates.repliedAt;
+  if (updates.replySnippet !== undefined) dbUpdates.reply_snippet = updates.replySnippet;
 
   const { error } = await supabase
     .from("report_entries")
