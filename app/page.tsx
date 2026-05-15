@@ -758,9 +758,11 @@ export default function EngineAgent() {
   const [preDrafts, setPreDrafts] = useState<PreDraft[]>([]);
   const [preDraftsLoaded, setPreDraftsLoaded] = useState(false);
   // Auto-discovered orgs with pre-drafted emails (from daily discovery cron)
-  interface AutoDraft { id: string; rep_name: string; org_name: string; org_type: string; contact_name: string; contact_title: string; contact_email: string; contact_source: string; contact_email_verified: boolean; subject: string; subject_b: string; body: string; research: string; website: string; status: string; created_at: string; }
+  interface AutoDraft { id: string; rep_name: string; org_name: string; org_type: string; contact_name: string; contact_title: string; contact_email: string; contact_source: string; contact_email_verified: boolean; subject: string; subject_b: string; body: string; research: string; website: string; status: string; created_at: string; dismiss_reason?: string; }
   const [autoDrafts, setAutoDrafts] = useState<AutoDraft[]>([]);
   const [autoDraftsLoaded, setAutoDraftsLoaded] = useState(false);
+  const [discoveryAll, setDiscoveryAll] = useState<AutoDraft[]>([]);
+  const [discoveryAllLoaded, setDiscoveryAllLoaded] = useState(false);
   const [repView, setRepView] = useState<"mine" | "all">("mine");
   const [reportPeriod, setReportPeriod] = useState<"today" | "week" | "all">("week");
   const [generatingFollowUp, setGeneratingFollowUp] = useState<string | null>(null);
@@ -928,6 +930,27 @@ export default function EngineAgent() {
       loadAutoDrafts();
     }
   }, [reportSubTab, autoDraftsLoaded, loadAutoDrafts]);
+
+  const loadDiscoveryAll = useCallback(async () => {
+    try {
+      const repName = styleProfile?.repName;
+      if (!repName) return;
+      const [pendingRes, sentRes, dismissedRes] = await Promise.all([
+        fetch(`/api/discover?rep=${encodeURIComponent(repName)}&status=pending`),
+        fetch(`/api/discover?rep=${encodeURIComponent(repName)}&status=sent`),
+        fetch(`/api/discover?rep=${encodeURIComponent(repName)}&status=dismissed`),
+      ]);
+      const [p, s, d] = await Promise.all([pendingRes.json(), sentRes.json(), dismissedRes.json()]);
+      setDiscoveryAll([...(p.drafts || []), ...(s.drafts || []), ...(d.drafts || [])]);
+      setDiscoveryAllLoaded(true);
+    } catch { /* silently fail */ }
+  }, [styleProfile?.repName]);
+
+  useEffect(() => {
+    if (reportSubTab === "summary" && !discoveryAllLoaded) {
+      loadDiscoveryAll();
+    }
+  }, [reportSubTab, discoveryAllLoaded, loadDiscoveryAll]);
 
   const saveBrief = (brief: PitchBrief, company: string, domain: string) => {
     const id = `${Date.now()}-${company.replace(/\s+/g, "-").toLowerCase()}`;
@@ -3433,7 +3456,7 @@ SUBJECT: Re: ${entry.subjectLine}
                   )}
                   {/* Sub-tabs */}
                   <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: `1px solid ${BORDER}`, marginLeft: -24, marginRight: -24, paddingLeft: 24, alignItems: "center" }}>
-                    {([["log", "Activity Log"], ["summary", "Summary"], ["followups", "Follow-Ups"]] as const).map(([id, label]) => (
+                    {([["log", "Activity Log"], ["summary", "Dashboard"], ["followups", "Follow-Ups"]] as const).map(([id, label]) => (
                       <button key={id} onClick={() => setReportSubTab(id)}
                         style={{ padding: "10px 18px", fontSize: 13, fontWeight: reportSubTab === id ? 600 : 400, color: reportSubTab === id ? TEXT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${reportSubTab === id ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
                         {label}
@@ -3512,270 +3535,171 @@ SUBJECT: Re: ${entry.subjectLine}
                     </div>
                   ) : reportSubTab === "summary" ? (
                     <div>
-                      {/* Period toggle */}
                       {(() => {
                         const todayStr = new Date().toISOString().slice(0, 10);
-                        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-                        const inPeriod = (dateStr: string | null) => {
-                          if (!dateStr) return false;
-                          if (reportPeriod === "today") return dateStr === todayStr;
-                          if (reportPeriod === "week") return dateStr >= weekAgo;
-                          return true;
-                        };
-                        const periodEntries = reportPeriod === "all" ? sentEntries : sentEntries.filter(e => inPeriod(e.dateSent));
-                        const periodOrgs = [...new Set(periodEntries.map(e => e.organization))];
-                        // Total emails = initial sends + all follow-ups sent (follow-ups aren't date-stamped so all-time only)
+                        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                        // ── Regular outreach metrics ─────────────────────────────────────────
                         const fuSent = sentEntries.filter(e => e.followUpSent).length;
                         const fu2Sent = sentEntries.filter(e => e.followUp2Sent).length;
                         const fu3Sent = sentEntries.filter(e => e.followUp3Sent).length;
                         const totalEmailsAllTime = sentEntries.length + fuSent + fu2Sent + fu3Sent;
-                        const periodLabel = reportPeriod === "today" ? "Today" : reportPeriod === "week" ? "This Week" : "All Time";
+                        const overdueCount = overdueEntries.length;
+                        const inPipelineCount = reportEntries.filter(e => ["Prospecting","Discovery","Proposal"].includes(e.stage)).length;
 
-                        return (<>
-                          {/* Period selector */}
-                          <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
-                            {(["today", "week", "all"] as const).map(p => (
-                              <button key={p} onClick={() => setReportPeriod(p)}
-                                style={{ padding: "6px 16px", borderRadius: 20, border: `1px solid ${reportPeriod === p ? ACCENT : BORDER}`, background: reportPeriod === p ? "rgba(253,75,35,0.08)" : SURFACE, color: reportPeriod === p ? ACCENT : TEXT_SECONDARY, fontSize: 12, fontWeight: reportPeriod === p ? 600 : 400, cursor: "pointer", fontFamily: "inherit" }}>
-                                {p === "today" ? "Today" : p === "week" ? "This Week" : "All Time"}
-                              </button>
+                        // Top org types — regular outreach
+                        const outreachCatCounts: Record<string, number> = {};
+                        sentEntries.forEach(e => {
+                          if (e.smerfCategory) outreachCatCounts[e.smerfCategory] = (outreachCatCounts[e.smerfCategory] || 0) + 1;
+                        });
+                        const topOutreachCats = Object.entries(outreachCatCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
+                        const maxOutreach = topOutreachCats[0]?.[1] || 1;
+
+                        // Pipeline stages
+                        const stageBreakdown = STAGES.map(s => ({ stage: s, count: reportEntries.filter(e => e.stage === s).length }));
+
+                        // ── Discovery metrics ────────────────────────────────────────────────
+                        const discPending = discoveryAll.filter(d => d.status === "pending").length;
+                        const discSent = discoveryAll.filter(d => d.status === "sent").length;
+                        const discWrongOrg = discoveryAll.filter(d => d.dismiss_reason === "wrong_org").length;
+                        const discBadDraft = discoveryAll.filter(d => d.dismiss_reason === "bad_draft").length;
+                        const discDismissed = discoveryAll.filter(d => d.status === "dismissed").length;
+                        const discTotal30d = discoveryAll.filter(d => d.created_at && d.created_at.slice(0,10) >= thirtyDaysAgo).length;
+
+                        // Top org types — discovery sent
+                        const discCatCounts: Record<string, number> = {};
+                        discoveryAll.filter(d => d.status === "sent").forEach(d => {
+                          if (d.org_type) discCatCounts[d.org_type] = (discCatCounts[d.org_type] || 0) + 1;
+                        });
+                        const topDiscCats = Object.entries(discCatCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
+                        const maxDisc = topDiscCats[0]?.[1] || 1;
+
+                        const maxDismissal = Math.max(discWrongOrg, discBadDraft, 1);
+
+                        // Bar chart helper
+                        const BarChart = ({ rows, max, color }: { rows: [string, number][]; max: number; color: string }) => (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {rows.length === 0 ? (
+                              <div style={{ fontSize: 12, color: MUTED, padding: "8px 0" }}>No data yet</div>
+                            ) : rows.map(([label, count], i) => (
+                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ fontSize: 11, color: TEXT, width: 120, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
+                                <div style={{ flex: 1, height: 7, background: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                                  <div style={{ width: `${Math.round((count / max) * 100)}%`, height: "100%", background: color, borderRadius: 4 }} />
+                                </div>
+                                <div style={{ fontSize: 11, color: TEXT_SECONDARY, width: 20, textAlign: "right", flexShrink: 0 }}>{count}</div>
+                              </div>
                             ))}
                           </div>
+                        );
 
-                          {/* Period metric cards */}
-                          <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "12px 16px", marginBottom: 12 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>{periodLabel}</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-                              {[
-                                { label: "Contacts Reached", value: periodEntries.length, color: SUCCESS },
-                                { label: "Orgs Contacted", value: periodOrgs.length, color: ACCENT },
-                                { label: "Follow-ups Overdue", value: overdueEntries.length, color: overdueEntries.length > 0 ? ERROR : MUTED },
-                              ].map((m, i) => (
-                                <div key={i} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "14px 16px" }}>
-                                  <div style={{ fontSize: 26, fontWeight: 700, color: m.color, letterSpacing: "-0.02em" }}>{m.value}</div>
-                                  <div style={{ fontSize: 11, color: TEXT_SECONDARY, marginTop: 3 }}>{m.label}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+                        return (
+                          <>
+                            {/* ── Section: Regular Outreach ──────────────────────────────── */}
+                            <div style={{ marginBottom: 24 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Regular Outreach</div>
 
-                          {/* All-time email breakdown — clearly separated */}
-                          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden", marginBottom: 20 }}>
-                            <div style={{ padding: "10px 16px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: TEXT }}>All-time email totals</span>
-                              <span style={{ fontSize: 10, color: MUTED }}>Tracked through this tool only</span>
-                            </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)" }}>
-                              {[
-                                { label: "Total", value: totalEmailsAllTime, color: TEXT },
-                                { label: "Initial", value: sentEntries.length, color: SUCCESS },
-                                { label: "Follow-up 1", value: fuSent, color: INFO },
-                                { label: "Follow-up 2", value: fu2Sent, color: INFO },
-                                { label: "Follow-up 3", value: fu3Sent, color: INFO },
-                              ].map((item, i) => (
-                                <div key={i} style={{ padding: "14px 12px", borderRight: i < 3 ? `1px solid ${BORDER}` : "none", textAlign: "center" }}>
-                                  <div style={{ fontSize: 22, fontWeight: 700, color: item.value > 0 ? item.color : MUTED }}>{item.value}</div>
-                                  <div style={{ fontSize: 10, color: MUTED, marginTop: 4 }}>{item.label}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Daily activity feed for Today / This Week */}
-                          {reportPeriod !== "all" && (
-                            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden", marginBottom: 20 }}>
-                              <div style={{ padding: "11px 16px", borderBottom: `1px solid ${BORDER}`, fontSize: 12, fontWeight: 600, color: TEXT }}>
-                                Activity — {periodLabel}
+                              {/* Metric cards */}
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+                                {[
+                                  { label: "Total Sent", value: totalEmailsAllTime, color: SUCCESS, sub: `${sentEntries.length} initial + ${fuSent+fu2Sent+fu3Sent} follow-ups` },
+                                  { label: "Orgs Contacted", value: [...new Set(sentEntries.map(e => e.organization))].length, color: ACCENT, sub: "unique organizations" },
+                                  { label: "Follow-ups Overdue", value: overdueCount, color: overdueCount > 0 ? ERROR : MUTED, sub: "need attention" },
+                                  { label: "In Pipeline", value: inPipelineCount, color: INFO, sub: "Prospecting · Discovery · Proposal" },
+                                ].map((m, i) => (
+                                  <div key={i} style={{ background: BG, borderRadius: 10, padding: "14px 16px", border: `1px solid ${BORDER}` }}>
+                                    <div style={{ fontSize: 11, color: MUTED, marginBottom: 4 }}>{m.label}</div>
+                                    <div style={{ fontSize: 26, fontWeight: 700, color: m.color, letterSpacing: "-0.02em", marginBottom: 2 }}>{m.value}</div>
+                                    <div style={{ fontSize: 10, color: MUTED }}>{m.sub}</div>
+                                  </div>
+                                ))}
                               </div>
-                              {periodEntries.length === 0 ? (
-                                <div style={{ padding: "24px 16px", textAlign: "center", color: MUTED, fontSize: 13 }}>No outreach recorded {reportPeriod === "today" ? "today" : "this week"}</div>
-                              ) : (
-                                // Group by date for weekly view
-                                (() => {
-                                  const byDate: Record<string, typeof periodEntries> = {};
-                                  periodEntries.forEach(e => {
-                                    const d = e.dateSent || "Unknown";
-                                    if (!byDate[d]) byDate[d] = [];
-                                    byDate[d].push(e);
-                                  });
-                                  return Object.entries(byDate).sort((a, b) => b[0].localeCompare(a[0])).map(([date, entries]) => {
-                                    const label = date === todayStr ? "Today" : new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-                                    const orgsToday = [...new Set(entries.map(e => e.organization))];
-                                    return (
-                                      <div key={date}>
-                                        <div style={{ padding: "8px 16px", background: BG, borderBottom: `1px solid ${BORDER}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                          <span style={{ fontSize: 11, fontWeight: 600, color: TEXT }}>{label}</span>
-                                          <span style={{ fontSize: 11, color: MUTED }}>{entries.length} contact{entries.length !== 1 ? "s" : ""} · {orgsToday.length} org{orgsToday.length !== 1 ? "s" : ""}</span>
+
+                              {/* Pipeline stages + Top org types side by side */}
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 0 }}>
+                                <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Pipeline stages</div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                    {stageBreakdown.map(({ stage, count }, i) => (
+                                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <div style={{ fontSize: 11, color: TEXT, width: 100, flexShrink: 0 }}>{stage}</div>
+                                        <div style={{ flex: 1, height: 7, background: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                                          <div style={{ width: `${Math.round((count / Math.max(reportEntries.length, 1)) * 100)}%`, height: "100%", background: STAGE_COLORS[stage as DealStage]?.text || MUTED, borderRadius: 4 }} />
                                         </div>
-                                        {entries.map((e, i) => (
-                                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: `1px solid ${BORDER}` }}>
-                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: SUCCESS, flexShrink: 0 }} />
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                              <div style={{ fontSize: 13, color: TEXT, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.contactName} <span style={{ fontWeight: 400, color: TEXT_SECONDARY }}>· {e.organization}</span></div>
-                                              <div style={{ fontSize: 11, color: MUTED, marginTop: 1 }}>{e.title}</div>
-                                            </div>
-                                            <div style={{ fontSize: 11, color: TEXT_SECONDARY, flexShrink: 0 }}>{e.smerfCategory}</div>
-                                            <div style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: STAGE_COLORS[e.stage]?.bg || BG, color: STAGE_COLORS[e.stage]?.text || MUTED, flexShrink: 0 }}>{e.stage}</div>
+                                        <div style={{ fontSize: 11, color: TEXT_SECONDARY, width: 20, textAlign: "right" }}>{count}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Top org types sent</div>
+                                  <BarChart rows={topOutreachCats} max={maxOutreach} color={ACCENT} />
+                                  {topOutreachCats.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>No outreach sent yet</div>}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ height: 1, background: BORDER, marginBottom: 24 }} />
+
+                            {/* ── Section: Daily Discovery ───────────────────────────────── */}
+                            <div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em" }}>Daily Discovery</div>
+                                {!discoveryAllLoaded && <div style={{ fontSize: 11, color: MUTED }}>Loading...</div>}
+                                {discoveryAllLoaded && <button onClick={() => { setDiscoveryAllLoaded(false); loadDiscoveryAll(); }} style={{ fontSize: 11, color: MUTED, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", marginLeft: "auto" }}>↻ Refresh</button>}
+                              </div>
+
+                              {/* Discovery metric cards */}
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+                                {[
+                                  { label: "Discovered (30d)", value: discTotal30d, color: ACCENT, sub: "3 orgs/day target" },
+                                  { label: "Sent", value: discSent, color: SUCCESS, sub: discTotal30d > 0 ? `${Math.round((discSent/Math.max(discoveryAll.length,1))*100)}% send rate` : "—" },
+                                  { label: "Dismissed", value: discDismissed, color: MUTED, sub: `${discWrongOrg} wrong org · ${discBadDraft} bad draft` },
+                                  { label: "Pending Review", value: discPending, color: INFO, sub: "waiting in Follow-Ups" },
+                                ].map((m, i) => (
+                                  <div key={i} style={{ background: BG, borderRadius: 10, padding: "14px 16px", border: `1px solid ${BORDER}` }}>
+                                    <div style={{ fontSize: 11, color: MUTED, marginBottom: 4 }}>{m.label}</div>
+                                    <div style={{ fontSize: 26, fontWeight: 700, color: m.color, letterSpacing: "-0.02em", marginBottom: 2 }}>{m.value}</div>
+                                    <div style={{ fontSize: 10, color: MUTED }}>{m.sub}</div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Top org types + Dismissal reasons side by side */}
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Top org types sent</div>
+                                  <BarChart rows={topDiscCats} max={maxDisc} color={ACCENT} />
+                                  {topDiscCats.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>Send some discovery emails to see which org types are working</div>}
+                                </div>
+                                <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Dismissal reasons</div>
+                                  {discDismissed === 0 ? (
+                                    <div style={{ fontSize: 12, color: MUTED }}>No dismissals yet</div>
+                                  ) : (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                      {[
+                                        { label: "Wrong org", count: discWrongOrg, color: MUTED },
+                                        { label: "Bad draft", count: discBadDraft, color: INFO },
+                                      ].map(({ label, count, color }, i) => (
+                                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                          <div style={{ fontSize: 11, color: TEXT, width: 90, flexShrink: 0 }}>{label}</div>
+                                          <div style={{ flex: 1, height: 7, background: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                                            <div style={{ width: `${Math.round((count / maxDismissal) * 100)}%`, height: "100%", background: color, borderRadius: 4 }} />
                                           </div>
-                                        ))}
-                                      </div>
-                                    );
-                                  });
-                                })()
-                              )}
-                            </div>
-                          )}
-
-                          {/* Pipeline stages */}
-                          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden", marginBottom: 20 }}>
-                            <div style={{ padding: "11px 16px", borderBottom: `1px solid ${BORDER}`, fontSize: 12, fontWeight: 600, color: TEXT }}>Pipeline — All Time</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 0 }}>
-                              {STAGES.map((stage, i) => {
-                                const count = visibleEntries.filter(e => e.stage === stage).length;
-                                const sc = STAGE_COLORS[stage];
-                                const isActive = logFilter === stage;
-                                return (
-                                  <button key={stage} onClick={() => { setLogFilter(isActive ? "all" : stage); setReportSubTab("log"); }}
-                                    style={{ padding: "14px 12px", borderRight: i < STAGES.length - 1 ? `1px solid ${BORDER}` : "none", textAlign: "center", background: isActive ? sc.bg : "transparent", border: "none", cursor: count > 0 ? "pointer" : "default", fontFamily: "inherit" }}>
-                                    <div style={{ fontSize: 20, fontWeight: 700, color: count > 0 ? sc.text : MUTED }}>{count}</div>
-                                    <div style={{ fontSize: 9, fontWeight: 600, color: count > 0 ? sc.text : MUTED, marginTop: 4, background: sc.bg, borderRadius: 20, padding: "2px 6px", display: "inline-block" }}>{stage}</div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Category breakdown */}
-                          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden" }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", background: BG, borderBottom: `1px solid ${BORDER}`, padding: "10px 16px" }}>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.05em" }}>Org Type</div>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>In Log</div>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Sent</div>
-                            </div>
-                            {Object.entries(catCounts).sort((a, b) => b[1] - a[1]).map(([cat, count], i) => {
-                              const sentCount = sentEntries.filter(e => e.smerfCategory === cat).length;
-                              return (
-                                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", padding: "10px 16px", borderBottom: `1px solid ${BORDER}`, alignItems: "center" }}>
-                                  <div style={{ fontSize: 13, color: TEXT }}>{cat}</div>
-                                  <div style={{ fontSize: 13, fontWeight: 600, color: ACCENT, textAlign: "right" }}>{count}</div>
-                                  <div style={{ fontSize: 13, fontWeight: 600, color: SUCCESS, textAlign: "right" }}>{sentCount}</div>
-                                </div>
-                              );
-                            })}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", padding: "10px 16px", background: BG }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: TEXT }}>Total</div>
-                              <div style={{ fontSize: 12, fontWeight: 700, color: ACCENT, textAlign: "right" }}>{visibleEntries.length}</div>
-                              <div style={{ fontSize: 12, fontWeight: 700, color: SUCCESS, textAlign: "right" }}>{sentEntries.length}</div>
-                            </div>
-                          </div>
-                        </>);
-                      })()}
-
-                      {/* Partner Intelligence (Crossbeam) */}
-                      {cbReady !== false && (cbLeaderboard.length > 0 || cbSuggestions.length > 0) && (
-                        <div style={{ marginTop: 20 }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: TEXT, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ background: "rgba(0,87,217,0.1)", color: "#0057D9", borderRadius: 6, padding: "3px 10px", fontSize: 11 }}>🤝 Crossbeam</span>
-                            Partner Intelligence
-                          </div>
-                          <div style={{ display: "grid", gridTemplateColumns: cbSuggestions.length > 0 ? "1fr 1fr" : "1fr", gap: 16 }}>
-                            {/* Leaderboard */}
-                            {cbLeaderboard.length > 0 && (
-                              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-                                <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <span style={{ fontSize: 12, fontWeight: 700, color: TEXT }}>Top Partners by Overlap</span>
-                                  <span style={{ fontSize: 10, color: MUTED }}>Year to date</span>
-                                </div>
-                                {cbLeaderboard.slice(0, 6).map((p, i) => {
-                                  const impactColor = p.impact === "high" ? SUCCESS : p.impact === "medium" ? "#F59E0B" : MUTED;
-                                  return (
-                                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "10px 16px", borderBottom: i < Math.min(cbLeaderboard.length, 6) - 1 ? `1px solid ${BORDER}` : "none", alignItems: "center" }}>
-                                      <div style={{ fontSize: 12, color: TEXT, fontWeight: 500 }}>{p.name}</div>
-                                      <div style={{ textAlign: "right" }}>
-                                        <span style={{ fontSize: 11, color: "#0057D9", fontWeight: 600 }}>{p.overlaps}</span>
-                                        <div style={{ fontSize: 9, color: MUTED }}>overlaps</div>
-                                      </div>
-                                      <div style={{ textAlign: "right" }}>
-                                        <span style={{ fontSize: 10, fontWeight: 600, color: impactColor, background: `${impactColor}18`, padding: "2px 7px", borderRadius: 20 }}>{p.impact}</span>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            {/* Suggestions */}
-                            {cbSuggestions.length > 0 && (
-                              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-                                <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}` }}>
-                                  <span style={{ fontSize: 12, fontWeight: 700, color: TEXT }}>Suggested Partners to Invite</span>
-                                </div>
-                                {cbSuggestions.slice(0, 6).map((s, i) => (
-                                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderBottom: i < Math.min(cbSuggestions.length, 6) - 1 ? `1px solid ${BORDER}` : "none" }}>
-                                    <div>
-                                      <div style={{ fontSize: 12, color: TEXT, fontWeight: 500 }}>{s.name}</div>
-                                      <div style={{ fontSize: 10, color: MUTED }}>{s.domain}</div>
-                                    </div>
-                                    {s.invite_url && (
-                                      <a href={s.invite_url} target="_blank" rel="noopener noreferrer"
-                                        style={{ fontSize: 11, color: "#0057D9", background: "rgba(0,87,217,0.08)", border: "1px solid rgba(0,87,217,0.2)", borderRadius: 6, padding: "4px 10px", textDecoration: "none", whiteSpace: "nowrap", fontWeight: 600 }}>
-                                        + Invite
-                                      </a>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      {cbReady === false && (
-                        <div style={{ marginTop: 20, padding: "16px 20px", background: "rgba(0,87,217,0.04)", border: `1px dashed rgba(0,87,217,0.2)`, borderRadius: 10, display: "flex", alignItems: "center", gap: 12 }}>
-                          <span style={{ fontSize: 20 }}>🤝</span>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>Connect Crossbeam for partner overlap signals</div>
-                            <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 2 }}>Add <code style={{ background: BG, padding: "1px 5px", borderRadius: 4, fontSize: 11 }}>CROSSBEAM_API_KEY</code> to your environment variables to see which partners overlap with your prospects.</div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Rep breakdown — only in All Reps view */}
-                      {repView === "all" && repCounts.length > 0 && (
-                        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden", marginTop: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-                          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${BORDER}`, fontSize: 12, fontWeight: 600, color: TEXT }}>By Rep — Stage Breakdown</div>
-                          <div style={{ overflowX: "auto" }}>
-                            <div style={{ minWidth: 720 }}>
-                              <div style={{ display: "grid", gridTemplateColumns: "140px 65px 75px 70px 85px 72px 70px 65px 65px", background: BG, borderBottom: `1px solid ${BORDER}`, padding: "8px 16px" }}>
-                                {["Rep", "Prospect", "Discovery", "Proposal", "Contracted", "Won", "Lost", "Sent", "⚠ Due"].map((h, i) => (
-                                  <div key={i} style={{ fontSize: 10, fontWeight: 600, color: i === 7 ? TEXT_SECONDARY : i === 8 ? ACCENT : STAGE_COLORS[STAGES[i - 1] as DealStage]?.text || TEXT_SECONDARY, textTransform: "uppercase", letterSpacing: "0.04em", textAlign: i > 0 ? "right" : "left" }}>{h}</div>
-                                ))}
-                              </div>
-                              {repCounts.map((r, i) => {
-                                const stageCounts = STAGES.map(stage =>
-                                  reportEntries.filter(e => e.repName === r.name && e.stage === stage).length
-                                );
-                                return (
-                                  <div key={i} style={{ display: "grid", gridTemplateColumns: "140px 65px 75px 70px 85px 72px 70px 65px 65px", padding: "11px 16px", borderBottom: i < repCounts.length - 1 ? `1px solid ${BORDER}` : "none", alignItems: "center" }}>
-                                    <div style={{ fontSize: 13, color: TEXT, fontWeight: 600 }}>{r.name}</div>
-                                    {stageCounts.map((cnt, si) => {
-                                      const sc = STAGE_COLORS[STAGES[si]];
-                                      return (
-                                        <div key={si} style={{ textAlign: "right" }}>
-                                          {cnt > 0
-                                            ? <span style={{ fontSize: 12, fontWeight: 700, color: sc.text, background: sc.bg, borderRadius: 20, padding: "2px 8px", display: "inline-block" }}>{cnt}</span>
-                                            : <span style={{ fontSize: 12, color: MUTED }}>—</span>
-                                          }
+                                          <div style={{ fontSize: 11, color: TEXT_SECONDARY, width: 20, textAlign: "right" }}>{count}</div>
                                         </div>
-                                      );
-                                    })}
-                                    <div style={{ fontSize: 13, fontWeight: 600, color: SUCCESS, textAlign: "right" }}>{r.sent}</div>
-                                    <div style={{ fontSize: 13, fontWeight: 600, color: r.overdue > 0 ? ACCENT : MUTED, textAlign: "right" }}>{r.overdue > 0 ? r.overdue : "—"}</div>
-                                  </div>
-                                );
-                              })}
+                                      ))}
+                                      <div style={{ marginTop: 8, fontSize: 11, color: MUTED, lineHeight: 1.5 }}>
+                                        {discWrongOrg > discBadDraft * 2 ? "High wrong org rate — tighten your segment focus in Settings." : discBadDraft > discWrongOrg ? "High bad draft rate — orgs are right but emails need refinement." : "Looking balanced."}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      )}
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : reportSubTab === "followups" ? (
                     /* Follow-Up Queue */
