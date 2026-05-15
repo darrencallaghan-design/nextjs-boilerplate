@@ -323,13 +323,15 @@ export async function GET(req: NextRequest) {
       // Build full exclusion list — no cap
       // Exclude: all contacted orgs + all previous discoveries EXCEPT "bad_draft" dismissals
       // (bad_draft = org is still valid, just the email was poor — keep it in the discovery pool)
-      const [{ data: contacted }, { data: previousDiscoveries }] = await Promise.all([
+      const [{ data: contacted, error: contactedErr }, { data: previousDiscoveries, error: prevErr }] = await Promise.all([
         db().from("report_entries").select("organization").eq("rep_name", rep.rep_name),
         db().from("auto_drafts")
           .select("org_name, status, dismiss_reason")
           .eq("rep_name", rep.rep_name)
           .or("status.eq.sent,status.eq.pending,and(status.eq.dismissed,dismiss_reason.neq.bad_draft),and(status.eq.dismissed,dismiss_reason.is.null)"),
       ]);
+      if (contactedErr) console.error("[discovery] report_entries query failed:", contactedErr.message);
+      if (prevErr) console.error("[discovery] auto_drafts dedup query failed — missing dismiss_reason column?", prevErr.message);
       const existingOrgs = [...new Set([
         ...(contacted || []).map((e: { organization: string }) => e.organization),
         ...(previousDiscoveries || []).map((e: { org_name: string }) => e.org_name),
@@ -387,7 +389,7 @@ export async function GET(req: NextRequest) {
             const draft = await draftEmail(contact, org.name, org.type, research, styleContext);
             if (!draft.body) continue;
 
-            await db().from("auto_drafts").insert({
+            const row: Record<string, unknown> = {
               id: crypto.randomUUID(),
               rep_name: rep.rep_name,
               org_name: org.name,
@@ -403,14 +405,20 @@ export async function GET(req: NextRequest) {
               research,
               website,
               status: "pending",
-              segment_snapshot: segmentSnapshot,
-            });
+            };
+            // Only include segment_snapshot if column exists (added via ALTER TABLE)
+            if (segmentSnapshot) row.segment_snapshot = segmentSnapshot;
+
+            const { error: insertErr } = await db().from("auto_drafts").insert(row);
+            if (insertErr) console.error(`[discovery] Insert failed for "${org.name}" / "${contact.name}":`, insertErr.message);
 
             await sleep(500);
           }
 
           await sleep(800); // pace between orgs
-        } catch { /* skip failed org, continue */ }
+        } catch (err) {
+          console.error(`[discovery] Failed processing org "${org.name}":`, err);
+        }
       }
     }
   });
