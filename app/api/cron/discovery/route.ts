@@ -260,10 +260,11 @@ ENGINE: Hotel booking platform. Say "Engine" never "Engine.com". Hotels only.
 VALUE: 1) Preferred hotel rates for org events/members 2) Referral revenue back to the org.
 ${research ? `RESEARCH:\n${research}\n` : ""}
 Angle the pitch to what matters most for a ${contact.title}.
-RULES: No em dashes. No generic openers. Short soft ask at end.
+RULES: No em dashes. No generic openers. Short soft ask at end. No markdown, no bold, no asterisks anywhere.
 
-SUBJECT_A: [curiosity/question style — org-specific]
-SUBJECT_B: [value/direct style — leads with the benefit]
+Output format — use EXACTLY this, plain text only:
+SUBJECT_A: [curiosity/question style, org-specific]
+SUBJECT_B: [value/direct style, leads with the benefit]
 
 [email body]`,
         }],
@@ -273,9 +274,10 @@ SUBJECT_B: [value/direct style — leads with the benefit]
     if (!res.ok) return { subject: "", subjectB: "", body: "" };
     const data = await res.json();
     const raw = (data?.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n");
-    const aMatch = raw.match(/^SUBJECT[_ ]A:\s*(.+)$/im);
-    const bMatch = raw.match(/^SUBJECT[_ ]B:\s*(.+)$/im);
-    const body = raw.replace(/^SUBJECT[_ ][AB]:\s*.+\n*/gim, "").trim();
+    // Handle both plain "SUBJECT_A: ..." and markdown bold "**SUBJECT_A:** ..."
+    const aMatch = raw.match(/^\*{0,2}SUBJECT[_ ]A:\*{0,2}\s*(.+)$/im);
+    const bMatch = raw.match(/^\*{0,2}SUBJECT[_ ]B:\*{0,2}\s*(.+)$/im);
+    const body = raw.replace(/^\*{0,2}SUBJECT[_ ][AB]:\*{0,2}\s*.+\n*/gim, "").replace(/^---\s*\n*/gm, "").trim();
     return {
       subject: aMatch ? stripDashes(aMatch[1].trim()) : `${orgName} + Engine`,
       subjectB: bMatch ? stripDashes(bMatch[1].trim()) : "",
