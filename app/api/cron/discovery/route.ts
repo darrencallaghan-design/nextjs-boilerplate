@@ -36,7 +36,6 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const maxDuration = 300;
@@ -306,9 +305,9 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!reps?.length) return NextResponse.json({ ok: true, message: "No reps with discovery enabled" });
 
-  // Return immediately — process in background
-  after(async () => {
-    const today = new Date().toISOString().slice(0, 10);
+  // Run synchronously within maxDuration = 300s (after() was unreliable on Vercel)
+  const today = new Date().toISOString().slice(0, 10);
+  try {
 
     for (const rep of reps) {
       // Skip if already ran today for this rep
@@ -421,7 +420,9 @@ export async function GET(req: NextRequest) {
         }
       }
     }
-  });
+  } catch (err) {
+    console.error("[discovery] Top-level error:", err);
+  }
 
-  return NextResponse.json({ ok: true, reps: reps.length, message: "Discovery running in background" });
+  return NextResponse.json({ ok: true, reps: reps.length, message: "Discovery complete" });
 }
