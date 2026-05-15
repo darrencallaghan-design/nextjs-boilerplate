@@ -482,7 +482,7 @@ Their writing sample:
 ---
 ${combinedSample}
 ---
-${profile.editExamples.length > 0 ? `\nThey have also edited AI drafts. Their edits show:\n${profile.editExamples.slice(-3).join("\n---\n")}` : ""}
+${profile.editExamples.length > 0 ? `\nThey have also edited AI drafts. Their edits show:\n${profile.editExamples.slice(-5).join("\n---\n")}` : ""}
 
 Return a concise style guide (3-5 sentences) that can be used to write future emails that sound exactly like them. Be specific about patterns you notice.`
       }]);
@@ -582,7 +582,7 @@ Return a concise style guide (3-5 sentences) that can be used to write future em
             ) : (
               <>
                 <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginBottom: 12 }}>
-                  Claude has learned from <strong>{profile.editExamples.length}</strong> of your edits. The {Math.min(profile.editExamples.length, 5)} most recent are used when generating emails.
+                  Claude has learned from <strong>{profile.editExamples.length}</strong> edit{profile.editExamples.length !== 1 ? "s" : ""}. The {Math.min(profile.editExamples.length, 5)} most recent are applied when writing new emails. Up to 20 edits are stored — new ones rotate out the oldest.
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
                   <button
@@ -1579,7 +1579,7 @@ export default function EngineAgent() {
       ? `\n\nSEGMENT CONTEXT: ${activeProfile.segmentFocus.substring(0, 400)}`
       : "";
     const styleContext = activeProfile
-      ? `You are ghostwriting for ${activeProfile.repName} at Engine. Match their exact voice from this sample:\n---\n${activeProfile.writingSample}\n---\nStyle: ${activeProfile.extractedStyle}${activeProfile.editExamples.length > 0 ? `\n\nEdits they've made — match this direction:\n${activeProfile.editExamples.slice(-3).join("\n---\n")}` : ""}${listSegmentCtx}`
+      ? `You are ghostwriting for ${activeProfile.repName} at Engine. Match their exact voice from this sample:\n---\n${activeProfile.writingSample}\n---\nStyle: ${activeProfile.extractedStyle}${activeProfile.editExamples.length > 0 ? `\n\nEdits they've made — match this direction:\n${activeProfile.editExamples.slice(-5).join("\n---\n")}` : ""}${listSegmentCtx}`
       : `You are writing outreach for an Engine partnerships rep.`;
 
     try {
@@ -1638,7 +1638,7 @@ export default function EngineAgent() {
     const example = `Original draft:\n${originalBody}\n\nHow ${styleProfile.repName} rewrote it:\n${editedBody}`;
     const updated: StyleProfile = {
       ...styleProfile,
-      editExamples: [...styleProfile.editExamples, example].slice(-5), // keep last 5
+      editExamples: [...styleProfile.editExamples, example].slice(-20), // keep last 20
     };
     saveStyleProfile(updated);
   };
@@ -1785,7 +1785,7 @@ export default function EngineAgent() {
             ? `\n\nSEGMENT CONTEXT (use to sharpen partnership angle): ${activeProfile.segmentFocus.substring(0, 400)}`
             : "";
           const styleContext = activeProfile
-            ? `You are ghostwriting for ${activeProfile.repName} at Engine. Match their exact voice from this sample:\n---\n${activeProfile.writingSample}\n---\nStyle: ${activeProfile.extractedStyle}${activeProfile.editExamples.length > 0 ? `\n\nEdits they've made — follow this direction:\n${activeProfile.editExamples.slice(-3).join("\n---\n")}` : ""}${segmentCtx}`
+            ? `You are ghostwriting for ${activeProfile.repName} at Engine. Match their exact voice from this sample:\n---\n${activeProfile.writingSample}\n---\nStyle: ${activeProfile.extractedStyle}${activeProfile.editExamples.length > 0 ? `\n\nEdits they've made — follow this direction:\n${activeProfile.editExamples.slice(-5).join("\n---\n")}` : ""}${segmentCtx}`
             : `You are writing outreach for an Engine partnerships rep.`;
 
           for (let ci = 0; ci < orgContacts.length; ci++) {
@@ -1993,7 +1993,7 @@ ${activeProfile.writingSample}
 Style analysis: ${activeProfile.extractedStyle}
 
 ${activeProfile.editExamples.length > 0 ? `They have also corrected AI drafts. Here is what they changed and how — match this direction:
-${activeProfile.editExamples.slice(-3).join("\n---\n")}` : ""}
+${activeProfile.editExamples.slice(-5).join("\n---\n")}` : ""}
 
 Your job: write the new email so that if ${activeProfile.repName} read it, they'd think "yes, this sounds like me." Copy their rhythm, not their words.` : `You are writing a cold outreach email for a business development rep at Engine.`;
 
@@ -2227,7 +2227,7 @@ Reply with ONLY the subject line. No quotes. No punctuation at the end.`
         ? `\n\nSEGMENT CONTEXT: ${activeProfile.segmentFocus.substring(0, 400)}`
         : "";
       const styleContext = activeProfile
-        ? `You are ghostwriting for ${activeProfile.repName} at Engine. Match their exact voice from this sample:\n---\n${activeProfile.writingSample}\n---\nStyle: ${activeProfile.extractedStyle}${activeProfile.editExamples.length > 0 ? `\n\nEdits they've made — match this direction:\n${activeProfile.editExamples.slice(-3).join("\n---\n")}` : ""}${listSegmentCtx}`
+        ? `You are ghostwriting for ${activeProfile.repName} at Engine. Match their exact voice from this sample:\n---\n${activeProfile.writingSample}\n---\nStyle: ${activeProfile.extractedStyle}${activeProfile.editExamples.length > 0 ? `\n\nEdits they've made — match this direction:\n${activeProfile.editExamples.slice(-5).join("\n---\n")}` : ""}${listSegmentCtx}`
         : `You are writing outreach for an Engine partnerships rep.`;
 
       for (let oi = 0; oi < freshOrgs.length; oi++) {
