@@ -3571,6 +3571,7 @@ SUBJECT: Re: ${entry.subjectLine}
                         const discSent = discoveryAll.filter(d => d.status === "sent").length;
                         const discWrongOrg = discoveryAll.filter(d => d.dismiss_reason === "wrong_org").length;
                         const discBadDraft = discoveryAll.filter(d => d.dismiss_reason === "bad_draft").length;
+                        const discCustomer = discoveryAll.filter(d => d.dismiss_reason === "engine_customer").length;
                         const discDismissed = discoveryAll.filter(d => d.status === "dismissed").length;
                         const discTotal30d = discoveryAll.filter(d => d.created_at && d.created_at.slice(0,10) >= thirtyDaysAgo).length;
 
@@ -3582,7 +3583,7 @@ SUBJECT: Re: ${entry.subjectLine}
                         const topDiscCats = Object.entries(discCatCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
                         const maxDisc = topDiscCats[0]?.[1] || 1;
 
-                        const maxDismissal = Math.max(discWrongOrg, discBadDraft, 1);
+                        const maxDismissal = Math.max(discWrongOrg, discBadDraft, discCustomer, 1);
 
                         // Bar chart helper
                         const BarChart = ({ rows, max, color }: { rows: [string, number][]; max: number; color: string }) => (
@@ -3668,7 +3669,7 @@ SUBJECT: Re: ${entry.subjectLine}
                                 {[
                                   { label: "Discovered (30d)", value: discTotal30d, color: ACCENT, sub: "3 orgs/day target" },
                                   { label: "Sent", value: discSent, color: SUCCESS, sub: discTotal30d > 0 ? `${Math.round((discSent/Math.max(discoveryAll.length,1))*100)}% send rate` : "—" },
-                                  { label: "Dismissed", value: discDismissed, color: MUTED, sub: `${discWrongOrg} wrong org · ${discBadDraft} bad draft` },
+                                  { label: "Dismissed", value: discDismissed, color: MUTED, sub: `${discCustomer} customer · ${discWrongOrg} wrong org · ${discBadDraft} bad draft` },
                                   { label: "Pending Review", value: discPending, color: INFO, sub: "waiting in Follow-Ups" },
                                 ].map((m, i) => (
                                   <div key={i} style={{ background: BG, borderRadius: 10, padding: "14px 16px", border: `1px solid ${BORDER}` }}>
@@ -3693,6 +3694,7 @@ SUBJECT: Re: ${entry.subjectLine}
                                   ) : (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                                       {[
+                                        { label: "Engine customer", count: discCustomer, color: SUCCESS },
                                         { label: "Wrong org", count: discWrongOrg, color: MUTED },
                                         { label: "Bad draft", count: discBadDraft, color: INFO },
                                       ].map(({ label, count, color }, i) => (
@@ -3705,7 +3707,7 @@ SUBJECT: Re: ${entry.subjectLine}
                                         </div>
                                       ))}
                                       <div style={{ marginTop: 8, fontSize: 11, color: MUTED, lineHeight: 1.5 }}>
-                                        {discWrongOrg > discBadDraft * 2 ? "High wrong org rate — tighten your segment focus in Settings." : discBadDraft > discWrongOrg ? "High bad draft rate — orgs are right but emails need refinement." : "Looking balanced."}
+                                        {discCustomer > 2 ? `${discCustomer} Engine customers caught — consider uploading a customer exclusion list.` : discWrongOrg > discBadDraft * 2 ? "High wrong org rate — tighten your segment focus in Settings." : discBadDraft > discWrongOrg ? "High bad draft rate — orgs are right but emails need refinement." : "Looking balanced."}
                                       </div>
                                     </div>
                                   )}
@@ -3838,6 +3840,15 @@ SUBJECT: Re: ${entry.subjectLine}
                                       }}
                                       style={{ padding: "7px 14px", background: ACCENT, color: ACCENT_TEXT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
                                       ✉ Send in Gmail
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        await fetch("/api/discover", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: draft.id, status: "dismissed", dismiss_reason: "engine_customer" }) });
+                                        setAutoDrafts(prev => prev.filter(d => d.id !== draft.id));
+                                      }}
+                                      title="Engine Customer — permanently skip this org, they're already a customer"
+                                      style={{ padding: "7px 14px", background: "none", color: SUCCESS, border: `1px solid ${SUCCESS}`, borderRadius: 7, fontFamily: "inherit", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                      ✓ Customer
                                     </button>
                                     <button
                                       onClick={async () => {
