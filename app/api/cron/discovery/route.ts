@@ -29,10 +29,16 @@
  *   research text,
  *   website text,
  *   status text default 'pending',
+ *   dismiss_reason text,
+ *   segment_snapshot text,
  *   created_at timestamptz default now()
  * );
  * alter table auto_drafts enable row level security;
  * create policy "allow_all" on auto_drafts for all using (true) with check (true);
+ *
+ * -- If the table already exists, run these to add missing columns:
+ * alter table auto_drafts add column if not exists dismiss_reason text;
+ * alter table auto_drafts add column if not exists segment_snapshot text;
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -309,6 +315,13 @@ export async function GET(req: NextRequest) {
 
   // Run synchronously within maxDuration = 300s (after() was unreliable on Vercel)
   const today = new Date().toISOString().slice(0, 10);
+
+  // Track totals across all reps for a useful response body
+  let totalInserted = 0;
+  let totalFailed = 0;
+  let totalSkippedDedup = 0;
+  const repResults: Record<string, unknown>[] = [];
+
   try {
 
     for (const rep of reps) {
@@ -319,7 +332,10 @@ export async function GET(req: NextRequest) {
         .eq("rep_name", rep.rep_name)
         .gte("created_at", today);
 
-      if ((todayCount || 0) > 0) continue;
+      if ((todayCount || 0) > 0) {
+        repResults.push({ rep: rep.rep_name, skipped: "already_ran_today", todayCount });
+        continue;
+      }
 
       // Build full exclusion list — no cap
       // Exclude: all contacted orgs + all previous discoveries EXCEPT "bad_draft" dismissals
@@ -356,7 +372,15 @@ export async function GET(req: NextRequest) {
 
       // Hard dedup — DB is the source of truth, not Claude's prompt compliance
       const newOrgs = newOrgsRaw.filter(o => !existingNorm.has(normalize(o.name))).slice(0, count);
-      if (!newOrgs.length) continue;
+      totalSkippedDedup += newOrgsRaw.length - newOrgs.length;
+
+      if (!newOrgs.length) {
+        repResults.push({ rep: rep.rep_name, skipped: "all_deduped", candidates: newOrgsRaw.length, excluded: existingOrgs.length });
+        continue;
+      }
+
+      let repInserted = 0;
+      let repFailed = 0;
 
       // Step 2: Process each org sequentially
       for (const org of newOrgs) {
@@ -406,12 +430,27 @@ export async function GET(req: NextRequest) {
               research,
               website,
               status: "pending",
+              segment_snapshot: segmentSnapshot || null,
             };
-            // Only include segment_snapshot if column exists (added via ALTER TABLE)
-            if (segmentSnapshot) row.segment_snapshot = segmentSnapshot;
 
-            const { error: insertErr } = await db().from("auto_drafts").insert(row);
-            if (insertErr) console.error(`[discovery] Insert failed for "${org.name}" / "${contact.name}":`, insertErr.message);
+            let { error: insertErr } = await db().from("auto_drafts").insert(row);
+
+            // If insert failed, it may be because segment_snapshot column doesn't exist yet.
+            // Retry without it so the cron keeps working until the migration is applied.
+            if (insertErr && insertErr.message?.includes("segment_snapshot")) {
+              console.warn(`[discovery] Retrying insert without segment_snapshot (run ALTER TABLE migration): ${insertErr.message}`);
+              const { segment_snapshot: _dropped, ...rowWithout } = row as Record<string, unknown> & { segment_snapshot: unknown };
+              const retry = await db().from("auto_drafts").insert(rowWithout);
+              insertErr = retry.error;
+            }
+
+            if (insertErr) {
+              console.error(`[discovery] Insert failed for "${org.name}" / "${contact.name}":`, insertErr.message);
+              repFailed++;
+            } else {
+              repInserted++;
+              totalInserted++;
+            }
 
             await sleep(500);
           }
@@ -419,12 +458,24 @@ export async function GET(req: NextRequest) {
           await sleep(800); // pace between orgs
         } catch (err) {
           console.error(`[discovery] Failed processing org "${org.name}":`, err);
+          repFailed++;
+          totalFailed++;
         }
       }
+
+      repResults.push({ rep: rep.rep_name, inserted: repInserted, failed: repFailed, orgsFound: newOrgs.length, excludedPool: existingOrgs.length });
     }
   } catch (err) {
     console.error("[discovery] Top-level error:", err);
   }
 
-  return NextResponse.json({ ok: true, reps: reps.length, message: "Discovery complete" });
+  return NextResponse.json({
+    ok: true,
+    reps: reps.length,
+    message: "Discovery complete",
+    totalInserted,
+    totalFailed,
+    totalSkippedDedup,
+    repResults,
+  });
 }
