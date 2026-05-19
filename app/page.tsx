@@ -3528,11 +3528,7 @@ SUBJECT: Re: ${entry.subjectLine}
                           style={{ padding: "6px 14px", fontSize: 12, fontWeight: 500, color: TEXT_SECONDARY, border: `1px solid ${BORDER}`, borderRadius: 6, background: SURFACE, cursor: "pointer", fontFamily: "inherit" }}>
                           ↓ Export CSV
                         </button>
-                        <button
-                          onClick={() => { if (confirm("Clear all report data? This cannot be undone.")) { setReportEntries([]); setWaveNumber(1); try { localStorage.removeItem(WAVE_KEY); } catch { /* ignore */ } fetch("/api/reports", { method: "DELETE" }).catch(() => {}); } }}
-                          style={{ padding: "10px 12px", fontSize: 11, color: MUTED, border: "none", background: "none", cursor: "pointer", fontFamily: "inherit" }}>
-                          Clear Data
-                        </button>
+                        {/* Clear Data button removed — too destructive. Delete rows individually via the Activity Log. */}
                       </>)}
                     </div>
                   </div>
