@@ -158,15 +158,34 @@ export async function GET(req: NextRequest) {
   // 2. FU1 sent, FU2 not sent, FU2 due <= tomorrow
   // 3. FU2 sent, FU3 not sent, FU3 due <= tomorrow
   // Note: exclude entries where the prospect already replied (replied_at IS NOT NULL)
-  const { data: allSentEntries, error } = await db()
-    .from("report_entries")
-    .select("id,contact_name,title,email,organization,subject_line,rep_name,follow_up_sent,follow_up_due,follow_up_2_sent,follow_up_2_due,follow_up_3_sent,follow_up_3_due,stage,status,replied_at")
-    .eq("status", "Sent")
-    .neq("stage", "Closed Won")
-    .neq("stage", "Closed Lost")
-    .is("replied_at", null); // skip prospects who already replied
+  // Try with replied_at filter first; fall back without it if column doesn't exist yet
+  let allSentEntries: Record<string, unknown>[] | null = null;
+  {
+    const withReplied = await db()
+      .from("report_entries")
+      .select("id,contact_name,title,email,organization,subject_line,rep_name,follow_up_sent,follow_up_due,follow_up_2_sent,follow_up_2_due,follow_up_3_sent,follow_up_3_due,stage,status,replied_at")
+      .eq("status", "Sent")
+      .neq("stage", "Closed Won")
+      .neq("stage", "Closed Lost")
+      .is("replied_at", null);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!withReplied.error) {
+      allSentEntries = withReplied.data;
+    } else {
+      // replied_at column not yet added — fall back to query without it
+      console.warn("[followups] replied_at column missing, running without reply filter. Run: ALTER TABLE report_entries ADD COLUMN IF NOT EXISTS replied_at timestamptz;");
+      const fallback = await db()
+        .from("report_entries")
+        .select("id,contact_name,title,email,organization,subject_line,rep_name,follow_up_sent,follow_up_due,follow_up_2_sent,follow_up_2_due,follow_up_3_sent,follow_up_3_due,stage,status")
+        .eq("status", "Sent")
+        .neq("stage", "Closed Won")
+        .neq("stage", "Closed Lost");
+      if (fallback.error) return NextResponse.json({ error: fallback.error.message }, { status: 500 });
+      allSentEntries = fallback.data;
+    }
+  }
+
+  const error = null; // handled above
   if (!allSentEntries?.length) return NextResponse.json({ drafted: 0, message: "No sent entries found" });
 
   // Filter to only entries with a due follow-up
