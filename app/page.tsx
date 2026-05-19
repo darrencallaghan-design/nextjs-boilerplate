@@ -2924,8 +2924,8 @@ SUBJECT: Re: ${entry.subjectLine}
                     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                       {pitchBrief.engineValueProps.map((vp, i) => (
                         <div key={i} style={{ borderLeft: `3px solid ${ACCENT}`, paddingLeft: 14 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: TEXT, marginBottom: 4 }}>{vp.headline}</div>
-                          {vp.bullets.map((b, j) => <div key={j} style={{ fontSize: 12, color: TEXT_SECONDARY, marginBottom: 2 }}>• {b}</div>)}
+                          <div style={{ fontSize: 13, fontWeight: 600, color: TEXT, marginBottom: 4 }}>{typeof vp.headline === "string" ? vp.headline : String(vp.headline ?? "")}</div>
+                          {(Array.isArray(vp.bullets) ? vp.bullets : []).map((b, j) => <div key={j} style={{ fontSize: 12, color: TEXT_SECONDARY, marginBottom: 2 }}>• {typeof b === "string" ? b : String(b ?? "")}</div>)}
                         </div>
                       ))}
                     </div>

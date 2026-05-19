@@ -203,6 +203,24 @@ export async function POST(req: NextRequest) {
       try { parsed = JSON.parse(jsonMatch[0]); } catch { /* will use fallback */ }
     }
 
+    // Claude sometimes returns arrays of objects instead of strings (e.g. {name, description}).
+    // Normalize everything to a plain string so React never crashes with error #31.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toStr = (item: any): string => {
+      if (typeof item === "string") return item;
+      if (item === null || item === undefined) return "";
+      if (typeof item === "object") {
+        // Common shapes Claude returns: {name, description}, {headline, date}, {name}, {text}
+        return [item.name, item.headline, item.description, item.text, item.date]
+          .filter(Boolean)
+          .join(" — ") || JSON.stringify(item);
+      }
+      return String(item);
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toStrArr = (arr: any): string[] =>
+      Array.isArray(arr) ? arr.map(toStr).filter(Boolean) : [];
+
     let brief;
     if (!parsed) {
       brief = {
@@ -226,18 +244,19 @@ export async function POST(req: NextRequest) {
         partnershipFit: {
           score: Number(parsed.fitScore || 0),
           tier: (parsed.fitTier || "Potential") as "Strong" | "Potential" | "Low",
-          signals: Array.isArray(parsed.fitSignals) ? parsed.fitSignals : [],
+          signals: toStrArr(parsed.fitSignals),
         },
         distributionPower: {
           networkSize: String(parsed.distribution?.networkSize || "Unknown"),
           networkType: String(parsed.distribution?.networkType || "Unknown"),
-          events: Array.isArray(parsed.distribution?.events) ? parsed.distribution.events : [],
-          existingPrograms: Array.isArray(parsed.distribution?.programs) ? parsed.distribution.programs : [],
+          events: toStrArr(parsed.distribution?.events),
+          existingPrograms: toStrArr(parsed.distribution?.programs),
         },
         engineValueProps: Array.isArray(parsed.valueProps) ? parsed.valueProps : [],
         pitchAngles: Array.isArray(parsed.pitchAngles) ? parsed.pitchAngles : [],
-        talkingPoints: Array.isArray(parsed.talkingPoints) ? parsed.talkingPoints : [],
+        talkingPoints: toStrArr(parsed.talkingPoints),
         crossbeamSignals: cbSignals,
+        // recentNews may be strings or {headline, date} objects — normalised at render time
         recentNews: Array.isArray(parsed.recentNews) ? parsed.recentNews : [],
         engineAngle: String(parsed.engineAngle || ""),
       };
