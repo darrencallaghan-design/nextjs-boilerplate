@@ -12,9 +12,14 @@
     "app/api/orchestrate/route.ts":      { "maxDuration": 300 },
     "app/api/cron/followups/route.ts":   { "maxDuration": 300 },
     "app/api/cron/discovery/route.ts":   { "maxDuration": 300 },
-    "app/api/cron/replies/route.ts":     { "maxDuration": 120 }
+    "app/api/cron/replies/route.ts":     { "maxDuration": 120 },
+    "app/api/cron/backup/route.ts":      { "maxDuration": 60  }
   },
   "crons": [
+    {
+      "path": "/api/cron/backup",
+      "schedule": "0 2 * * *"
+    },
     {
       "path": "/api/cron/replies",
       "schedule": "0 9 * * *"
