@@ -195,12 +195,27 @@ export async function POST(req: NextRequest) {
     );
     const [ziData, cbSignals] = await Promise.all([ziPromise, cbPromise]);
 
-    // Parse the brief JSON from the collected text
+    // Parse the brief JSON from the collected text.
+    // Claude sometimes wraps the JSON in a markdown code fence (```json ... ```)
+    // or prefixes it with "---". Strip those before trying to parse.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let parsed: any = null;
-    const jsonMatch = rawBrief.match(/\{[\s\S]*\}/);
+    // 1. Try to pull content from inside a code fence first
+    let jsonSource = rawBrief;
+    const fenceMatch = rawBrief.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) {
+      jsonSource = fenceMatch[1].trim();
+    }
+    // 2. Find the outermost JSON object
+    const jsonMatch = jsonSource.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      try { parsed = JSON.parse(jsonMatch[0]); } catch { /* will use fallback */ }
+      try { parsed = JSON.parse(jsonMatch[0]); } catch {
+        // Last-ditch: try trimming the raw brief directly
+        const rawMatch = rawBrief.match(/\{[\s\S]*\}/);
+        if (rawMatch) {
+          try { parsed = JSON.parse(rawMatch[0]); } catch { /* will use fallback */ }
+        }
+      }
     }
 
     // Claude sometimes returns arrays of objects instead of strings (e.g. {name, description}).
