@@ -90,27 +90,22 @@ async function discoverOrgs(
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 600,
+      max_tokens: 1500,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
       messages: [{
         role: "user",
-        content: `You are finding new SMERF organizations for a hotel partnership outreach pipeline.
+        content: `Find exactly ${count} NEW US SMERF organizations for hotel partnership outreach. SMERF = Social, Military, Educational, Religious, Fraternal.
 
-Rep context: ${segmentFocus ? segmentFocus.substring(0, 500) : "SMERF organizations in the US"}
+Today's focus: ${category}
 
-Today's focus category: ${category}
-
-Find exactly ${count} organizations that match ALL of these:
-- National or regional headquarters with paid staff (Executive Director, CEO, or President)
-- Members or staff who travel for conventions, chapter meetings, or programs
-- 10-500 members who travel regularly (not too small, not large enough for a full TMC)
-- Self-funded travel (members pay their own expenses)
-- No obvious existing corporate travel platform
+Requirements:
+- National headquarters with paid staff (Executive Director, CEO, or President)
+- Members/staff travel for conventions, chapter meetings, or programs
 - Based in the United States
 
-Do NOT include organizations already in the pipeline: ${alreadyIn}
+EXCLUDE (already in pipeline): ${alreadyIn}
 
-Return ONLY valid JSON, no other text:
+CRITICAL: Your entire response must be ONLY the JSON object below — no prose, no numbered list, no explanation before or after:
 {"orgs":[{"name":"Full Organization Name","type":"SMERF sub-category","website":"https://www.example.org"}]}`,
       }],
     }),
