@@ -52,18 +52,25 @@ export async function GET() {
   const dayOfWeek = new Date().getDay();
   const category = SMERF_CATEGORIES[dayOfWeek % SMERF_CATEGORIES.length];
 
-  const prompt = `Find exactly ${count} NEW US SMERF organizations for hotel partnership outreach. SMERF = Social, Military, Educational, Religious, Fraternal.
+  const prompt = `You are a research assistant. Find UP TO ${count} US SMERF organizations suitable for hotel partnership outreach. SMERF = Social, Military, Educational, Religious, Fraternal.
 
-Today's focus: ${category}
+Today's category focus: ${category}
 
 Requirements:
-- National headquarters with paid staff (Executive Director, CEO, or President)
-- Members/staff travel for conventions, chapter meetings, or programs
-- Based in the United States
+- US-based national or regional organization
+- Has paid professional staff (any executive-level title)
+- Members or staff travel for events, conventions, or programs
+- NOT already in pipeline below
 
-EXCLUDE (already in pipeline): ${alreadyIn}
+ALREADY IN PIPELINE — exclude these: ${alreadyIn}
 
-CRITICAL: Your entire response must be ONLY the JSON object below — no prose, no numbered list, no explanation before or after:
+MANDATORY RULES:
+1. You MUST respond with ONLY valid JSON — no explanations, no prose, no refusals
+2. Return however many you found (0 to ${count}) — fewer is fine if the category is narrow
+3. If you found nothing, return: {"orgs":[]}
+4. Do not explain why you could or couldn't find orgs — just return the JSON
+
+Your ENTIRE response must be this exact JSON structure:
 {"orgs":[{"name":"Full Organization Name","type":"SMERF sub-category","website":"https://www.example.org"}]}`;
 
   const apiKey = process.env.ANTHROPIC_API_KEY || "";
