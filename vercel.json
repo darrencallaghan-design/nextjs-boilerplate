@@ -13,7 +13,8 @@
     "app/api/cron/followups/route.ts":   { "maxDuration": 300 },
     "app/api/cron/discovery/route.ts":   { "maxDuration": 300 },
     "app/api/cron/replies/route.ts":     { "maxDuration": 120 },
-    "app/api/cron/backup/route.ts":      { "maxDuration": 60  }
+    "app/api/cron/backup/route.ts":      { "maxDuration": 60  },
+    "app/api/debug-discovery/route.ts": { "maxDuration": 60  }
   },
   "crons": [
     {
