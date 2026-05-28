@@ -66,6 +66,45 @@ const SMERF_CATEGORIES = [
   "service organizations with national chapters (Lions, Rotary, Elks, Knights of Columbus) and historically Black Greek-letter organizations (BGLOs)",
 ];
 
+/** Extract the first complete JSON object containing "orgs" using brace counting.
+ *  More reliable than a greedy regex when Claude surrounds the JSON with prose or
+ *  outputs multiple JSON-like fragments.
+ */
+function extractOrgsJson(text: string): string | null {
+  // 1) Direct parse — fastest path when Claude obeys the JSON-only instruction
+  try {
+    const t = text.trim();
+    const direct = JSON.parse(t);
+    if (Array.isArray(direct?.orgs)) return t;
+  } catch {}
+
+  // 2) Find the LAST complete {"orgs"… } block (Claude sometimes outputs a draft
+  //    then a corrected version — we want the final one)
+  let lastGood: string | null = null;
+  let searchFrom = 0;
+  while (true) {
+    const start = text.indexOf('{"orgs"', searchFrom);
+    if (start === -1) break;
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}") {
+        depth--;
+        if (depth === 0) { end = i; break; }
+      }
+    }
+    if (end === -1) break; // unclosed — stop searching
+    const candidate = text.slice(start, end + 1);
+    try {
+      const p = JSON.parse(candidate);
+      if (Array.isArray(p?.orgs)) lastGood = candidate;
+    } catch {}
+    searchFrom = end + 1;
+  }
+  return lastGood;
+}
+
 // ── Discovery Agent — find new SMERF orgs ────────────────────────────────────
 async function discoverOrgs(
   repName: string,
@@ -122,18 +161,20 @@ CRITICAL: Your entire response must be ONLY the JSON object below — no prose, 
     .map((b: { text: string }) => b.text)
     .join("\n");
 
-  console.log(`[discovery] discoverOrgs raw text (${text.length} chars):`, text.slice(0, 200));
+  console.log(`[discovery] discoverOrgs stop_reason=${data?.stop_reason} text_len=${text.length} preview=${JSON.stringify(text.slice(0, 300))}`);
 
-  const match = text.match(/\{[\s\S]*"orgs"[\s\S]*\}/);
-  if (!match) {
-    console.error("[discovery] discoverOrgs: no JSON match in response. stop_reason:", data?.stop_reason);
+  const jsonStr = extractOrgsJson(text);
+  if (!jsonStr) {
+    console.error("[discovery] discoverOrgs: no orgs JSON found. stop_reason:", data?.stop_reason, "text:", text.slice(0, 500));
     return [];
   }
   try {
-    const parsed = JSON.parse(match[0]);
-    return (parsed.orgs || []).filter((o: { name?: string }) => o.name).slice(0, count);
+    const parsed = JSON.parse(jsonStr);
+    const orgs = (parsed.orgs || []).filter((o: { name?: string }) => o.name).slice(0, count);
+    console.log(`[discovery] discoverOrgs found ${orgs.length} orgs`);
+    return orgs;
   } catch (e) {
-    console.error("[discovery] discoverOrgs JSON parse error:", e);
+    console.error("[discovery] discoverOrgs JSON parse error:", e, "jsonStr:", jsonStr.slice(0, 300));
     return [];
   }
 }
@@ -382,7 +423,7 @@ export async function GET(req: NextRequest) {
       totalSkippedDedup += newOrgsRaw.length - newOrgs.length;
 
       if (!newOrgs.length) {
-        repResults.push({ rep: rep.rep_name, skipped: "all_deduped", candidates: newOrgsRaw.length, excluded: existingOrgs.length });
+        repResults.push({ rep: rep.rep_name, skipped: "all_deduped", candidates: newOrgsRaw.length, excluded: existingOrgs.length, rawCandidates: newOrgsRaw.map(o => o.name) });
         continue;
       }
 
