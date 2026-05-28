@@ -213,7 +213,7 @@ export async function GET(req: NextRequest) {
     .from("drafted_followups")
     .select("entry_id, fu_num, status")
     .in("entry_id", dueEntryIds)
-    .in("status", ["pending", "sent"]);
+    .in("status", ["pending", "sent", "dismissed"]);
 
   // Key is entry_id + fu_num so different FU numbers for the same entry are independent
   const alreadyDrafted = new Set(

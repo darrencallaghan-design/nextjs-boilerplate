@@ -760,6 +760,7 @@ export default function EngineAgent() {
   interface PreDraft { id: string; entry_id: string; fu_num: number; subject: string; body: string; rep_name: string; entry: PreDraftEntry | null; }
   const [preDrafts, setPreDrafts] = useState<PreDraft[]>([]);
   const [preDraftsLoaded, setPreDraftsLoaded] = useState(false);
+  const [deployStatus, setDeployStatus] = useState<"idle" | "deploying" | "done" | "error">("idle");
   // Auto-discovered orgs with pre-drafted emails (from daily discovery cron)
   interface AutoDraft { id: string; rep_name: string; org_name: string; org_type: string; contact_name: string; contact_title: string; contact_email: string; contact_source: string; contact_email_verified: boolean; subject: string; subject_b: string; body: string; research: string; website: string; status: string; created_at: string; dismiss_reason?: string; }
   const [autoDrafts, setAutoDrafts] = useState<AutoDraft[]>([]);
@@ -3005,6 +3006,56 @@ SUBJECT: Re: ${entry.subjectLine}
                     Set Up Your Style Profile
                   </button>
                 )}
+              </div>
+
+              {/* ── Deploy section ── */}
+              <div style={{ marginTop: 28 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, marginBottom: 12 }}>App Deployment</div>
+                <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
+                  <div style={{ fontSize: 13, color: TEXT_SECONDARY, marginBottom: 14, lineHeight: 1.5 }}>
+                    Trigger a fresh Vercel build — useful after code changes are merged or env vars are updated.
+                  </div>
+                  <button
+                    disabled={deployStatus === "deploying"}
+                    onClick={async () => {
+                      setDeployStatus("deploying");
+                      try {
+                        const res = await fetch("/api/deploy", { method: "POST" });
+                        const data = await res.json();
+                        if (!res.ok) {
+                          console.error("[deploy]", data.error);
+                          setDeployStatus("error");
+                        } else {
+                          setDeployStatus("done");
+                        }
+                      } catch (e) {
+                        console.error("[deploy]", e);
+                        setDeployStatus("error");
+                      }
+                      setTimeout(() => setDeployStatus("idle"), 6000);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "10px 16px",
+                      background: deployStatus === "done" ? SUCCESS : deployStatus === "error" ? "#c0392b" : deployStatus === "deploying" ? SURFACE : ACCENT,
+                      border: deployStatus === "deploying" ? `1px solid ${BORDER}` : "none",
+                      borderRadius: 8,
+                      fontFamily: "inherit",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: deployStatus === "deploying" ? MUTED : ACCENT_TEXT,
+                      cursor: deployStatus === "deploying" ? "not-allowed" : "pointer",
+                      transition: "background 0.2s",
+                    }}
+                  >
+                    {deployStatus === "deploying" ? "⏳ Deploying…" : deployStatus === "done" ? "✓ Deploy triggered" : deployStatus === "error" ? "✗ Deploy failed — check VERCEL_DEPLOY_HOOK" : "🚀 Deploy Now"}
+                  </button>
+                  {deployStatus === "done" && (
+                    <div style={{ fontSize: 11, color: TEXT_SECONDARY, marginTop: 8 }}>
+                      Build queued — usually live in ~60 seconds. Check Vercel dashboard for progress.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
