@@ -116,19 +116,31 @@ Return ONLY valid JSON, no other text:
     }),
   });
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    console.error(`[discovery] discoverOrgs API error ${res.status}: ${errBody.slice(0, 300)}`);
+    return [];
+  }
   const data = await res.json();
   const text = (data?.content || [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)
     .join("\n");
 
+  console.log(`[discovery] discoverOrgs raw text (${text.length} chars):`, text.slice(0, 200));
+
   const match = text.match(/\{[\s\S]*"orgs"[\s\S]*\}/);
-  if (!match) return [];
+  if (!match) {
+    console.error("[discovery] discoverOrgs: no JSON match in response. stop_reason:", data?.stop_reason);
+    return [];
+  }
   try {
     const parsed = JSON.parse(match[0]);
     return (parsed.orgs || []).filter((o: { name?: string }) => o.name).slice(0, count);
-  } catch { return []; }
+  } catch (e) {
+    console.error("[discovery] discoverOrgs JSON parse error:", e);
+    return [];
+  }
 }
 
 // ── Research subagent ─────────────────────────────────────────────────────────
