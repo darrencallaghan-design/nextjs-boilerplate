@@ -36,3 +36,6 @@ Darren Callaghan, Partnerships/BD at Engine. Building and using Engine Agent (en
 ## Domain Knowledge
 - **SMERF deep-dive:** memory/context/smerf.md
 - **Darren's segment focus + discovery prefs:** memory/people/darren-callaghan.md
+
+## Working Rules
+- **Before any `/compact`:** Save significant decisions, feature plans, and design ideas to a memory file under `memory/` so they survive the compact. If a conversation has produced a meaningful plan or direction, write it to `memory/decisions/` before the context is lost.
