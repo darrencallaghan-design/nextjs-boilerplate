@@ -55,15 +55,23 @@ function db() {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-// Rotate SMERF sub-categories by day of week for pipeline diversity
+// Rotate SMERF sub-categories by day of week for pipeline diversity.
+// All categories should have high travel volumes and many national orgs.
+// K-12 removed — most districts aren't national orgs with paid executive staff.
 const SMERF_CATEGORIES = [
-  "Greek-letter fraternities and sororities (NPC, IFC, NPHC, NALFO) with national headquarters",
-  "alumni associations and honor societies with national conventions or member travel programs",
-  "veterans organizations and military support groups (VFW, American Legion, AMVETS, TAPS, Blue Star Families)",
-  "religious denominations and faith-based nonprofits with annual conferences or staff/member travel",
-  "K-12 school districts, private schools, and charter networks that coordinate student and staff travel",
-  "professional societies and trade associations with member travel and annual conferences",
-  "service organizations with national chapters (Lions, Rotary, Elks, Knights of Columbus) and historically Black Greek-letter organizations (BGLOs)",
+  "Greek-letter fraternities and sororities (NPC, IFC, NPHC, NALFO) with national headquarters and annual conventions",
+  "alumni associations, honor societies, and reunion travel programs with national conventions",
+  "veterans and military support organizations (American Legion, VFW, AMVETS, MOAA, etc.) with annual conferences",
+  "religious denominations, faith-based nonprofits, and church networks with annual conferences or pilgrimages",
+  "civic and community service organizations with national chapters (Lions, Rotary, Elks, Kiwanis, Knights of Columbus, Shriners, Moose Lodge)",
+  "professional societies, medical associations, and trade associations with annual member conferences",
+  "historically Black colleges (HBCU) alumni associations, BGLOs, and cultural heritage organizations with national reunions",
+];
+
+// Fallback categories used when the primary yields no results
+const FALLBACK_CATEGORIES = [
+  "national nonprofit associations with paid executive staff and annual national gatherings",
+  "youth organizations and scouting groups with national jamborees or staff travel (4-H, Boys & Girls Clubs, YMCA affiliates)",
 ];
 
 /** Extract the first complete JSON object containing "orgs" using brace counting.
@@ -107,14 +115,28 @@ function extractOrgsJson(text: string): string | null {
 
 // ── Discovery Agent — find new SMERF orgs ────────────────────────────────────
 async function discoverOrgs(
-  repName: string,
-  segmentFocus: string,
+  _repName: string,
+  _segmentFocus: string,
   existingOrgs: string[],
   count: number
 ): Promise<{ name: string; type: string; website: string }[]> {
   const dayOfWeek = new Date().getDay();
   const category = SMERF_CATEGORIES[dayOfWeek % SMERF_CATEGORIES.length];
 
+  const result = await discoverOrgsWithCategory(category, existingOrgs, count);
+  if (result.length > 0) return result;
+
+  // Primary category returned nothing — try a fallback
+  console.log(`[discovery] Primary category "${category}" returned 0 orgs, trying fallback`);
+  const fallback = FALLBACK_CATEGORIES[dayOfWeek % FALLBACK_CATEGORIES.length];
+  return discoverOrgsWithCategory(fallback, existingOrgs, count);
+}
+
+async function discoverOrgsWithCategory(
+  category: string,
+  existingOrgs: string[],
+  count: number,
+): Promise<{ name: string; type: string; website: string }[]> {
   // Pass full list — truncate by character length to stay within prompt limits, not by count
   const alreadyInFull = existingOrgs.join(", ");
   const alreadyIn = alreadyInFull.length > 6000 ? alreadyInFull.slice(0, 6000) + " ... (more excluded)" : alreadyInFull || "none yet";
