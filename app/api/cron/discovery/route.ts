@@ -68,10 +68,17 @@ const SMERF_CATEGORIES = [
   "historically Black colleges (HBCU) alumni associations, BGLOs, and cultural heritage organizations with national reunions",
 ];
 
-// Fallback categories used when the primary yields no results
+// Fallback categories — used when the primary yields nothing.
+// Deliberately pick niches that are different from the 7 primaries above
+// so the fallback is truly additive rather than repeating exhausted categories.
 const FALLBACK_CATEGORIES = [
-  "national nonprofit associations with paid executive staff and annual national gatherings",
-  "youth organizations and scouting groups with national jamborees or staff travel (4-H, Boys & Girls Clubs, YMCA affiliates)",
+  "genealogical and heritage societies, ethnic cultural associations, and ancestry clubs with national conventions",
+  "sports hall of fame associations, interscholastic athletics federations, and amateur sports governing bodies with annual gatherings",
+  "hobby, collectibles, and enthusiast clubs with national conventions (numismatics, philately, model railroads, antiques)",
+  "performing arts organizations, bands, choral groups, and competitive dance associations with national competitions",
+  "law enforcement, firefighter, and first responder associations with national fraternal chapters and annual conferences",
+  "disability advocacy and rehabilitation networks, health condition support organizations with national conventions",
+  "agricultural, farming, and rural cooperative associations with national annual meetings and member travel",
 ];
 
 /** Extract the first complete JSON object containing "orgs" using brace counting.
