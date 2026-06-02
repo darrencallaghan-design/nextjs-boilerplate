@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
     const message = rawOrgs.length > 0 && allInPipeline
       ? `All ${rawOrgs.length} found org${rawOrgs.length !== 1 ? "s" : ""} already in your pipeline.`
       : "No orgs found. Try a broader or different search.";
-    return NextResponse.json({ results: [], count: 0, message, _debug: { category, rawFound: rawOrgs.length, existingInDB: allExistingNorm.size, rawOrgs: rawOrgs.map(o => o.name) } });
+    return NextResponse.json({ results: [], count: 0, message });
   }
 
   const results: SearchOrgResult[] = [];
