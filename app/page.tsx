@@ -3,16 +3,20 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 
 const ACCENT = "#F5A623";
-const ACCENT_TEXT = "#1A1A1A"; // dark text for yellow buttons
-const BG = "#F8F6F2";
+const ACCENT_TEXT = "#FFFFFF";
+const INDIGO = "#6C6FEF";
+const INDIGO_BG = "#F0F0FD";
+const BG = "#F5F6FA";
 const SURFACE = "#FFFFFF";
-const BORDER = "#E8E5E0";
-const MUTED = "#9E9E9E";
-const TEXT = "#10121A";
-const TEXT_SECONDARY = "#616368";
-const SUCCESS = "#009262";
-const ERROR = "#E53935";
-const INFO = "#4BBFC4";
+const SURFACE_TINT = "#FAFBFF";
+const SIDEBAR_BG = "#F8F9FF";
+const BORDER = "#EAECF2";
+const MUTED = "#9CA3AF";
+const TEXT = "#111827";
+const TEXT_SECONDARY = "#6B7280";
+const SUCCESS = "#059669";
+const ERROR = "#DC2626";
+const INFO = "#6C6FEF";
 
 const FALLBACK_ROLES = ["Executive Director", "VP of Programs", "Director of Events"];
 
@@ -2750,13 +2754,18 @@ SUBJECT: Re: ${entry.subjectLine}
         </div>
       )}
 
-      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 28px", height: 56, borderBottom: `1px solid ${BORDER}`, background: SURFACE, boxShadow: "0 1px 0 rgba(0,0,0,0.06)" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-          <span style={{ fontSize: 17, fontWeight: 700, color: TEXT, letterSpacing: "-0.02em", fontFamily: "'Inter', sans-serif" }}>Engine</span>
-          <span style={{ fontSize: 17, fontWeight: 400, color: TEXT_SECONDARY, letterSpacing: "-0.01em", fontFamily: "'Inter', sans-serif" }}>Agent</span>
-          <span style={{ fontSize: 11, color: MUTED, fontWeight: 400, marginLeft: 2 }}>· Partnership Prospecting</span>
+      {/* Top accent bar */}
+      <div style={{ height: 3, background: `linear-gradient(90deg, ${INDIGO}, #a78bfa)`, flexShrink: 0 }} />
+
+      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px", height: 52, borderBottom: `1px solid ${BORDER}`, background: SURFACE, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: TEXT, letterSpacing: "-0.025em", fontFamily: "'Inter', sans-serif" }}>Engine</span>
+          <span style={{ fontSize: 15, fontWeight: 600, color: INDIGO, letterSpacing: "-0.025em", fontFamily: "'Inter', sans-serif" }}>Agent</span>
+          <div style={{ width: 1, height: 14, background: BORDER, margin: "0 2px" }} />
+          <span style={{ fontSize: 11, color: MUTED, fontWeight: 400 }}>Partnership prospecting</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "3px 8px", fontSize: 11, color: MUTED, fontFamily: "monospace", letterSpacing: "0.02em" }}>⌘ K</div>
           {styleProfile && (
             <div style={{ display: "flex", gap: 6 }}>
               <button
@@ -2774,22 +2783,26 @@ SUBJECT: Re: ${entry.subjectLine}
               </button>
             </div>
           )}
+          {/* Initials avatar */}
+          <div style={{ width: 28, height: 28, borderRadius: "50%", background: INDIGO_BG, border: `1px solid ${BORDER}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600, color: INDIGO, flexShrink: 0, marginLeft: 2 }}>
+            DC
+          </div>
         </div>
       </header>
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
         {/* ── Sidebar ── */}
-        <div style={{ width: 168, background: SURFACE, borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", padding: "8px 10px", gap: 2, flexShrink: 0, zIndex: 10 }}>
+        <div style={{ width: 164, background: SIDEBAR_BG, borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", padding: "8px 8px", gap: 1, flexShrink: 0, zIndex: 10 }}>
           {/* App label */}
-          <div style={{ padding: "10px 8px 14px", borderBottom: `1px solid ${BORDER}`, marginBottom: 6 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, letterSpacing: "-0.01em" }}>Engine <span style={{ color: ACCENT }}>Agent</span></div>
-            <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>Partnership Prospecting</div>
+          <div style={{ padding: "8px 8px 12px", borderBottom: `1px solid ${BORDER}`, marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: TEXT, letterSpacing: "-0.02em" }}>Engine <span style={{ color: INDIGO }}>Agent</span></div>
+            <div style={{ fontSize: 10, color: MUTED, marginTop: 2, fontWeight: 400 }}>Partnership AI</div>
           </div>
           {([
             ["outreach", "✉", "Outreach"],
             ["reports", "📊", "Reports"],
-            ["research", "🔍", "Research & Pitch"],
+            ["research", "🔍", "Research"],
             ["search", "✦", "AI Search"],
           ] as [typeof sideNav, string, string][]).map(([key, icon, label]) => (
             <button
@@ -2799,9 +2812,18 @@ SUBJECT: Re: ${entry.subjectLine}
                 if (key === "reports") setTab("reports");
                 if (key === "outreach") setTab("contacts");
               }}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", background: sideNav === key ? "rgba(253,75,35,0.08)" : "transparent", color: sideNav === key ? ACCENT : TEXT_SECONDARY, fontSize: 13, fontWeight: sideNav === key ? 600 : 400, cursor: "pointer", display: "flex", alignItems: "center", gap: 9, textAlign: "left", transition: "all 0.12s", fontFamily: "inherit" }}
+              style={{
+                width: "100%", padding: "7px 10px 7px 14px", borderRadius: 8, border: "none",
+                background: "transparent",
+                color: sideNav === key ? INDIGO : TEXT_SECONDARY,
+                fontSize: 12, fontWeight: sideNav === key ? 500 : 400,
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                textAlign: "left", transition: "all 0.12s", fontFamily: "inherit",
+                position: "relative",
+                borderLeft: sideNav === key ? `3px solid ${INDIGO}` : "3px solid transparent",
+              }}
             >
-              <span style={{ fontSize: 15, flexShrink: 0, opacity: sideNav === key ? 1 : 0.6 }}>{icon}</span>
+              <span style={{ fontSize: 14, flexShrink: 0, opacity: sideNav === key ? 1 : 0.5 }}>{icon}</span>
               {label}
             </button>
           ))}
@@ -2809,19 +2831,19 @@ SUBJECT: Re: ${entry.subjectLine}
           <div style={{ height: 1, background: BORDER, margin: "4px 0" }} />
           <button
             onClick={() => setSideNav("settings")}
-            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", background: sideNav === "settings" ? "rgba(253,75,35,0.08)" : "transparent", color: sideNav === "settings" ? ACCENT : TEXT_SECONDARY, fontSize: 13, fontWeight: sideNav === "settings" ? 600 : 400, cursor: "pointer", display: "flex", alignItems: "center", gap: 9, textAlign: "left", fontFamily: "inherit" }}
+            style={{
+              width: "100%", padding: "7px 10px 7px 14px", borderRadius: 8, border: "none",
+              background: "transparent",
+              color: sideNav === "settings" ? INDIGO : TEXT_SECONDARY,
+              fontSize: 12, fontWeight: sideNav === "settings" ? 500 : 400,
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+              textAlign: "left", fontFamily: "inherit",
+              borderLeft: sideNav === "settings" ? `3px solid ${INDIGO}` : "3px solid transparent",
+            }}
           >
-            <span style={{ fontSize: 15, opacity: sideNav === "settings" ? 1 : 0.6 }}>⚙</span>
+            <span style={{ fontSize: 14, opacity: sideNav === "settings" ? 1 : 0.5 }}>⚙</span>
             Settings
           </button>
-          {styleProfile && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", marginTop: 2 }}>
-              <div style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(253,75,35,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: ACCENT, flexShrink: 0 }}>
-                {styleProfile.repName.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
-              </div>
-              <div style={{ fontSize: 11, color: TEXT_SECONDARY, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{styleProfile.repName}</div>
-            </div>
-          )}
         </div>
 
         {/* ── AI Chat section ── */}
@@ -3328,12 +3350,12 @@ SUBJECT: Re: ${entry.subjectLine}
           <div style={{ background: BG, borderRadius: 10, padding: 18 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>Target Organization</div>
-              <div style={{ display: "flex", background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 6, overflow: "hidden" }}>
+              <div style={{ display: "flex", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 3, gap: 2 }}>
                 {[["Single", "single"], ["Batch", "batch"], ["List", "list"]].map(([label, val]) => {
                   const isActive = val === "list" ? listMode : val === "batch" ? (batchMode && !listMode) : (!batchMode && !listMode);
                   return (
                     <button key={val} onClick={() => { setListMode(val === "list"); setBatchMode(val === "batch"); }}
-                      style={{ padding: "4px 10px", fontSize: 11, fontFamily: "inherit", border: "none", cursor: "pointer", background: isActive ? ACCENT : "transparent", color: isActive ? ACCENT_TEXT : MUTED, fontWeight: isActive ? 600 : 400 }}>
+                      style={{ padding: "4px 12px", fontSize: 11, fontFamily: "inherit", border: "none", borderRadius: 6, cursor: "pointer", background: isActive ? SURFACE : "transparent", color: isActive ? TEXT : MUTED, fontWeight: isActive ? 500 : 400, boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.06)" : "none", transition: "all 0.12s" }}>
                       {label}
                     </button>
                   );
@@ -3441,8 +3463,8 @@ SUBJECT: Re: ${entry.subjectLine}
                   </button>
                 ) : (
                   <button onClick={handleRunClick} disabled={running || !orgName}
-                    style={{ width: "100%", padding: "12px", background: running || !orgName ? BORDER : ACCENT, border: "none", borderRadius: 7, fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: running || !orgName ? MUTED : ACCENT_TEXT, cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14 }}>
-                    {running ? "Running…" : batchMode ? "Find 10 Orgs & Draft Emails" : styleProfile ? "Run Full Workflow" : "Set Up Style & Run"}
+                    style={{ width: "100%", padding: "11px", background: running || !orgName ? BG : INDIGO, border: `1px solid ${running || !orgName ? BORDER : INDIGO}`, borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 500, color: running || !orgName ? MUTED : "#fff", cursor: running || !orgName ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14, letterSpacing: "-0.01em" }}>
+                    {running ? "Running…" : batchMode ? "Find 10 Orgs & Draft Emails" : styleProfile ? "Run Full Workflow →" : "Set Up Style & Run"}
                   </button>
                 )}
               </>
@@ -3461,16 +3483,18 @@ SUBJECT: Re: ${entry.subjectLine}
         </div>
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", borderBottom: `1px solid ${BORDER}`, padding: "0 24px", background: SURFACE }}>
-            {["contacts", "drafts", "sent", "reports"].map(t => (
-              <button key={t} onClick={() => setTab(t)} style={{ padding: "14px 16px", fontSize: 13, fontWeight: tab === t ? 600 : 400, color: tab === t ? TEXT : MUTED, border: "none", background: "none", cursor: "pointer", borderBottom: `2px solid ${tab === t ? ACCENT : "transparent"}`, marginBottom: -1, fontFamily: "inherit" }}>
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-                {t === "contacts" && contacts.length > 0 && <span style={{ marginLeft: 6, background: BG, borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>{contacts.length}</span>}
-                {t === "drafts" && drafts.length > 0 && <span style={{ marginLeft: 6, background: BG, borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>{drafts.length}</span>}
-                {t === "sent" && sent.length > 0 && <span style={{ marginLeft: 6, background: BG, borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>{sent.length}</span>}
-                {t === "reports" && reportEntries.length > 0 && <span style={{ marginLeft: 6, background: BG, borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>{reportEntries.filter(e => e.status === "Sent").length} sent</span>}
-              </button>
-            ))}
+          <div style={{ display: "flex", padding: "10px 16px", background: SURFACE, borderBottom: `1px solid ${BORDER}`, gap: 2 }}>
+            <div style={{ display: "flex", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 3, gap: 2 }}>
+              {["contacts", "drafts", "sent", "reports"].map(t => (
+                <button key={t} onClick={() => setTab(t)} style={{ padding: "5px 14px", fontSize: 12, fontWeight: tab === t ? 500 : 400, color: tab === t ? TEXT : MUTED, border: "none", borderRadius: 6, background: tab === t ? SURFACE : "transparent", cursor: "pointer", fontFamily: "inherit", boxShadow: tab === t ? "0 1px 2px rgba(0,0,0,0.06)" : "none", transition: "all 0.12s", display: "flex", alignItems: "center", gap: 5 }}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {t === "contacts" && contacts.length > 0 && <span style={{ background: INDIGO_BG, color: INDIGO, borderRadius: 10, padding: "0px 6px", fontSize: 10, fontWeight: 500 }}>{contacts.length}</span>}
+                  {t === "drafts" && drafts.length > 0 && <span style={{ background: INDIGO_BG, color: INDIGO, borderRadius: 10, padding: "0px 6px", fontSize: 10, fontWeight: 500 }}>{drafts.length}</span>}
+                  {t === "sent" && sent.length > 0 && <span style={{ background: INDIGO_BG, color: INDIGO, borderRadius: 10, padding: "0px 6px", fontSize: 10, fontWeight: 500 }}>{sent.length}</span>}
+                  {t === "reports" && reportEntries.length > 0 && <span style={{ background: INDIGO_BG, color: INDIGO, borderRadius: 10, padding: "0px 6px", fontSize: 10, fontWeight: 500 }}>{reportEntries.filter(e => e.status === "Sent").length}</span>}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
