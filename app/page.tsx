@@ -735,6 +735,92 @@ function SegmentViewer({ profile, onUpdate, onClose }: { profile: StyleProfile; 
   );
 }
 
+// ── Scout org card — actionable result ───────────────────────────────────────
+function ScoutOrgCard({ r, onGoToDraft, SURFACE, SURFACE_TINT, BG, BORDER, TEXT, TEXT_SECONDARY, MUTED, ACCENT, INDIGO, INDIGO_BG, SUCCESS }: {
+  r: { id: string; org_name: string; org_type: string; website: string; research: string; contact_name: string; contact_title: string; contact_email: string; subject: string; body: string; inPipeline?: boolean };
+  onGoToDraft: () => void;
+  SURFACE: string; SURFACE_TINT: string; BG: string; BORDER: string; TEXT: string; TEXT_SECONDARY: string; MUTED: string; ACCENT: string; INDIGO: string; INDIGO_BG: string; SUCCESS: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyDraft = () => {
+    const text = `Subject: ${r.subject}\n\n${r.body}`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden" }}>
+      {/* Header row */}
+      <div style={{ padding: "10px 12px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: TEXT, letterSpacing: "-0.01em" }}>{r.org_name}</div>
+            <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+              {r.org_type}{r.website ? <> · <a href={r.website} target="_blank" rel="noreferrer" style={{ color: INDIGO }}>{r.website.replace(/^https?:\/\/(www\.)?/, "")}</a></> : null}
+            </div>
+          </div>
+          {r.inPipeline
+            ? <span style={{ fontSize: 10, background: INDIGO_BG, color: INDIGO, padding: "2px 8px", borderRadius: 99, flexShrink: 0, fontWeight: 500 }}>In pipeline</span>
+            : <span style={{ fontSize: 10, background: "#ECFDF5", color: SUCCESS, padding: "2px 8px", borderRadius: 99, flexShrink: 0, fontWeight: 500 }}>Added</span>
+          }
+        </div>
+
+        {/* Research snippet */}
+        {r.research && (
+          <div style={{ fontSize: 11, color: TEXT_SECONDARY, lineHeight: 1.55, marginBottom: 8, borderLeft: `2px solid ${BORDER}`, paddingLeft: 8 }}>
+            {r.research.slice(0, 160)}{r.research.length > 160 ? "…" : ""}
+          </div>
+        )}
+
+        {/* Contact chip */}
+        {r.contact_name && (
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+            <span style={{ fontSize: 10, color: TEXT_SECONDARY, background: BG, border: `1px solid ${BORDER}`, padding: "2px 8px", borderRadius: 5 }}>
+              {r.contact_name}{r.contact_title ? ` · ${r.contact_title}` : ""}
+            </span>
+            {r.contact_email && (
+              <span style={{ fontSize: 10, color: INDIGO, background: INDIGO_BG, border: `1px solid ${BORDER}`, padding: "2px 8px", borderRadius: 5 }}>{r.contact_email}</span>
+            )}
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button
+            onClick={() => setExpanded(e => !e)}
+            style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: `1px solid ${expanded ? INDIGO : BORDER}`, background: expanded ? INDIGO_BG : BG, color: expanded ? INDIGO : TEXT_SECONDARY, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
+            {expanded ? "Hide draft ↑" : "View draft ↓"}
+          </button>
+          <button
+            onClick={copyDraft}
+            style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: `1px solid ${BORDER}`, background: copied ? "#ECFDF5" : BG, color: copied ? SUCCESS : TEXT_SECONDARY, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
+            {copied ? "Copied ✓" : "Copy email"}
+          </button>
+          <button
+            onClick={onGoToDraft}
+            style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: `1px solid ${INDIGO}`, background: INDIGO, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
+            Go to draft →
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded draft panel */}
+      {expanded && r.body && (
+        <div style={{ borderTop: `1px solid ${BORDER}`, background: SURFACE_TINT, padding: "10px 14px" }}>
+          <div style={{ fontSize: 10, fontWeight: 500, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Subject</div>
+          <div style={{ fontSize: 12, fontWeight: 500, color: TEXT, marginBottom: 10 }}>{r.subject}</div>
+          <div style={{ fontSize: 10, fontWeight: 500, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Body</div>
+          <div style={{ fontSize: 12, color: TEXT_SECONDARY, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{r.body}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EngineAgent() {
   const [orgName, setOrgName] = useState("");
   const [orgType, setOrgType] = useState("");
@@ -2960,26 +3046,14 @@ SUBJECT: Re: ${entry.subjectLine}
                           {msg.orgs && msg.orgs.length > 0 && (
                             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
                               {msg.orgs.map(r => (
-                                <div key={r.id} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 12px" }}>
-                                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-                                    <div>
-                                      <div style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{r.org_name}</div>
-                                      <div style={{ fontSize: 11, color: MUTED, marginTop: 1 }}>
-                                        {r.org_type}{r.website ? <> · <a href={r.website} target="_blank" rel="noreferrer" style={{ color: ACCENT }}>{r.website.replace(/^https?:\/\/(www\.)?/, "")}</a></> : null}
-                                      </div>
-                                    </div>
-                                    {r.inPipeline
-                                      ? <span style={{ fontSize: 10, background: "rgba(99,102,241,0.1)", color: "#4338CA", padding: "2px 8px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>In Pipeline</span>
-                                      : <span style={{ fontSize: 10, background: "rgba(29,158,117,0.1)", color: "#0F6E56", padding: "2px 8px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>Added</span>
-                                    }
-                                  </div>
-                                  {r.research && <div style={{ fontSize: 11, color: TEXT_SECONDARY, lineHeight: 1.5, marginBottom: 6, borderLeft: `2px solid ${BORDER}`, paddingLeft: 8 }}>{r.research.slice(0, 180)}{r.research.length > 180 ? "…" : ""}</div>}
-                                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                                    {r.contact_name && <span style={{ fontSize: 10, color: TEXT_SECONDARY, background: SURFACE, border: `1px solid ${BORDER}`, padding: "2px 7px", borderRadius: 5 }}>{r.contact_name}{r.contact_title ? ` · ${r.contact_title}` : ""}</span>}
-                                    {r.contact_email && <span style={{ fontSize: 10, color: ACCENT, background: SURFACE, border: `1px solid ${BORDER}`, padding: "2px 7px", borderRadius: 5 }}>{r.contact_email}</span>}
-                                    {r.subject && <span style={{ fontSize: 10, color: TEXT_SECONDARY, background: SURFACE, border: `1px solid ${BORDER}`, padding: "2px 7px", borderRadius: 5 }}>&ldquo;{r.subject.slice(0, 50)}{r.subject.length > 50 ? "…" : ""}&rdquo;</span>}
-                                  </div>
-                                </div>
+                                <ScoutOrgCard
+                                  key={r.id}
+                                  r={r}
+                                  onGoToDraft={() => { setSideNav("outreach"); setTab("drafts"); }}
+                                  SURFACE={SURFACE} SURFACE_TINT={SURFACE_TINT} BG={BG} BORDER={BORDER}
+                                  TEXT={TEXT} TEXT_SECONDARY={TEXT_SECONDARY} MUTED={MUTED}
+                                  ACCENT={ACCENT} INDIGO={INDIGO} INDIGO_BG={INDIGO_BG} SUCCESS={SUCCESS}
+                                />
                               ))}
                             </div>
                           )}
