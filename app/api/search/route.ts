@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
   const orgs = rawOrgs.filter(o => !existingNorm.has(normalize(o.name))).slice(0, 5);
 
   if (!orgs.length) {
-    return NextResponse.json({ results: [], count: 0, message: "No new orgs found. Try a broader search." });
+    return NextResponse.json({ results: [], count: 0, message: "No new orgs found. Try a broader search.", _debug: { category, rawFound: rawOrgs.length, excluded: existingOrgs.length, rawOrgs: rawOrgs.map(o => o.name) } });
   }
 
   const results: SearchOrgResult[] = [];
