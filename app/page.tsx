@@ -801,6 +801,7 @@ export default function EngineAgent() {
     contact_email: string;
     subject: string;
     body: string;
+    inPipeline?: boolean;
   }
   const [searchQuery, setSearchQuery] = useState("");
   const [searchRunning, setSearchRunning] = useState(false);
@@ -2894,7 +2895,10 @@ SUBJECT: Re: ${entry.subjectLine}
                           {r.website ? <> · <a href={r.website} target="_blank" rel="noreferrer" style={{ color: ACCENT }}>{r.website.replace(/^https?:\/\/(www\.)?/, "")}</a></> : null}
                         </div>
                       </div>
-                      <span style={{ fontSize: 11, background: "rgba(29,158,117,0.1)", color: "#0F6E56", padding: "3px 10px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>Added to Discovered</span>
+                      {r.inPipeline
+                        ? <span style={{ fontSize: 11, background: "rgba(99,102,241,0.1)", color: "#4338CA", padding: "3px 10px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>In Pipeline</span>
+                        : <span style={{ fontSize: 11, background: "rgba(29,158,117,0.1)", color: "#0F6E56", padding: "3px 10px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>Added to Discovered</span>
+                      }
                     </div>
                     {r.research && (
                       <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginBottom: 10, lineHeight: 1.6, borderLeft: `2px solid ${BORDER}`, paddingLeft: 10 }}>

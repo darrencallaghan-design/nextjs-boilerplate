@@ -5,8 +5,11 @@
  * Body: { query: string; repName: string }
  * Returns: { results: SearchOrgResult[]; count: number; message: string }
  *
- * Runs the full pipeline (discover → research → contacts → draft) synchronously,
- * same pattern as the daily discovery cron which runs up to 300s reliably.
+ * Strategy:
+ * 1. Claude searches the web freely (no exclusion list — passing 190+ orgs breaks it)
+ * 2. New orgs (not in DB) → run full pipeline and insert
+ * 3. Orgs already in pipeline → surface from DB directly (show with "in pipeline" flag)
+ * 4. Result = new + surfaced, capped at 5 total
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -76,6 +79,7 @@ interface SearchOrgResult {
   contact_email: string;
   subject: string;
   body: string;
+  inPipeline?: boolean;
 }
 
 export async function POST(req: NextRequest) {
@@ -106,51 +110,53 @@ export async function POST(req: NextRequest) {
     ? `You are ghostwriting for ${repNameSafe} at Engine. Match their exact voice:\n---\n${rep.writing_sample.substring(0, 600)}\n---\nStyle: ${rep.extracted_style || ""}`
     : `You are writing outreach for ${repNameSafe} at Engine, a hotel booking platform.`;
 
-  // Load all existing orgs for DB-level dedup (prevents duplicate inserts).
-  // We do NOT pass these to Claude — the pipeline has 190+ orgs and passing that list
-  // causes Claude to return 0 results even for valid categories.
-  // Claude searches freely; JS handles dedup before inserting.
+  // Load all existing org names — used for dedup (not passed to Claude)
   const [{ data: contacted }, { data: allDrafts }] = await Promise.all([
     supabase.from("report_entries").select("organization").eq("rep_name", repNameSafe),
-    supabase.from("auto_drafts").select("org_name").eq("rep_name", repNameSafe),
+    supabase.from("auto_drafts")
+      .select("id, org_name, org_type, website, research, contact_name, contact_title, contact_email, subject, body, status")
+      .eq("rep_name", repNameSafe),
   ]);
 
   const normalize = (s: string) => s.toLowerCase().replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
 
-  // Full set for DB-level dedup at insert time only
-  const allExistingNorm = new Set([
-    ...(contacted || []).map((e: { organization: string }) => normalize(e.organization)),
-    ...(allDrafts || []).map((e: { org_name: string }) => normalize(e.org_name)),
-  ]);
+  const contactedNorm = new Set((contacted || []).map((e: { organization: string }) => normalize(e.organization)));
+
+  // Map of normalized name → best existing draft (prefer pending over dismissed)
+  const draftsByNorm = new Map<string, Record<string, unknown>>();
+  for (const d of (allDrafts || []) as Record<string, unknown>[]) {
+    const n = normalize(d.org_name as string);
+    const existing = draftsByNorm.get(n);
+    // Keep pending > dismissed priority
+    if (!existing || (d.status === "pending" && existing.status !== "pending")) {
+      draftsByNorm.set(n, d);
+    }
+  }
 
   // Translate query to category
   const category = await translateQueryToCategory(query.trim());
 
-  // Discover orgs with NO exclusion list — Claude gets full freedom to search the web.
-  // Dedup happens in JS below. Ask for 9 to have buffer; cap final results at 5.
-  // Retry once if the first attempt returns nothing (Claude web search can be flaky).
+  // Claude searches freely — no exclusion list (passing 190+ orgs causes it to return 0)
+  // Retry once with raw query if category translation returns nothing
   let rawOrgs = await discoverOrgsWithCategory(category, [], 9);
   if (!rawOrgs.length) {
-    // Retry with the original user query directly (skip translation layer)
     await sleep(1500);
     rawOrgs = await discoverOrgsWithCategory(query.trim(), [], 9);
   }
 
-  // Hard dedup against ALL existing orgs in DB — no duplicate inserts
-  const orgs = rawOrgs.filter(o => !allExistingNorm.has(normalize(o.name))).slice(0, 5);
-
-  if (!orgs.length) {
-    const allRawNorm = rawOrgs.map(o => normalize(o.name));
-    const allInPipeline = allRawNorm.every(n => allExistingNorm.has(n));
-    const message = rawOrgs.length > 0 && allInPipeline
-      ? `All ${rawOrgs.length} found org${rawOrgs.length !== 1 ? "s" : ""} already in your pipeline.`
-      : "No orgs found. Try a broader or different search.";
-    return NextResponse.json({ results: [], count: 0, message });
+  if (!rawOrgs.length) {
+    return NextResponse.json({ results: [], count: 0, message: "No orgs found. Try a different search." });
   }
 
   const results: SearchOrgResult[] = [];
 
-  for (const org of orgs) {
+  // Separate: orgs already in pipeline vs genuinely new
+  const newOrgs = rawOrgs.filter(o => !draftsByNorm.has(normalize(o.name)) && !contactedNorm.has(normalize(o.name)));
+  const pipelineOrgs = rawOrgs.filter(o => draftsByNorm.has(normalize(o.name)));
+
+  // Run full pipeline on new orgs (up to 5 total budget)
+  for (const org of newOrgs.slice(0, 5)) {
+    if (results.length >= 5) break;
     try {
       const { research, website: foundWebsite } = await researchOrg(org.name, org.type);
       const website = foundWebsite || org.website || "";
@@ -214,9 +220,39 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({
-    results,
-    count: results.length,
-    message: `Found ${results.length} org${results.length !== 1 ? "s" : ""} — added to Discovered.`,
-  });
+  // Fill remaining slots with pipeline orgs (already have research + drafts)
+  for (const org of pipelineOrgs) {
+    if (results.length >= 5) break;
+    const existing = draftsByNorm.get(normalize(org.name));
+    if (!existing) continue;
+    results.push({
+      id: existing.id as string,
+      org_name: existing.org_name as string,
+      org_type: existing.org_type as string,
+      website: existing.website as string || "",
+      research: existing.research as string || "",
+      contact_name: existing.contact_name as string || "",
+      contact_title: existing.contact_title as string || "",
+      contact_email: existing.contact_email as string || "",
+      subject: existing.subject as string || "",
+      body: existing.body as string || "",
+      inPipeline: true,
+    });
+  }
+
+  const newCount = results.filter(r => !r.inPipeline).length;
+  const pipelineCount = results.filter(r => r.inPipeline).length;
+
+  let message = "";
+  if (newCount > 0 && pipelineCount > 0) {
+    message = `${newCount} new org${newCount !== 1 ? "s" : ""} added to Discovered, ${pipelineCount} already in your pipeline.`;
+  } else if (newCount > 0) {
+    message = `Found ${newCount} new org${newCount !== 1 ? "s" : ""} — added to Discovered.`;
+  } else if (pipelineCount > 0) {
+    message = `${pipelineCount} org${pipelineCount !== 1 ? "s" : ""} found — already in your pipeline.`;
+  } else {
+    message = "No results found. Try a different search.";
+  }
+
+  return NextResponse.json({ results, count: results.length, message });
 }
