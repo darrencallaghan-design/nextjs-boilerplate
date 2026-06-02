@@ -2765,7 +2765,6 @@ SUBJECT: Re: ${entry.subjectLine}
           <span style={{ fontSize: 11, color: MUTED, fontWeight: 400 }}>Partnership prospecting</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "3px 8px", fontSize: 11, color: MUTED, fontFamily: "monospace", letterSpacing: "0.02em" }}>⌘ K</div>
           {styleProfile && (
             <div style={{ display: "flex", gap: 6 }}>
               <button
