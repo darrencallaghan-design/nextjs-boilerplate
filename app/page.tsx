@@ -1634,7 +1634,7 @@ export default function EngineAgent() {
     if (!searchQuery.trim() || searchRunning) return;
     setSearchRunning(true);
     setSearchResults([]);
-    setSearchStatus("Translating query and finding orgs…");
+    setSearchStatus("Researching orgs — this takes about 60 seconds…");
 
     try {
       const repName = styleProfile?.repName || "Darren";
@@ -1643,45 +1643,16 @@ export default function EngineAgent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: searchQuery, repName }),
       });
-      if (!res.ok || !res.body) {
-        setSearchStatus("Search failed. Please try again.");
-        setSearchRunning(false);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setSearchStatus(errData.error || "Search failed. Please try again.");
         return;
       }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let insertedCount = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          // SSE format: lines starting with "data: "
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (!jsonStr) continue;
-          try {
-            const event = JSON.parse(jsonStr);
-            if (event.type === "status") {
-              setSearchStatus(event.message);
-            } else if (event.type === "org") {
-              setSearchResults(prev => [...prev, event.data]);
-              insertedCount++;
-              setSearchStatus(`Found ${insertedCount} org${insertedCount > 1 ? "s" : ""} so far…`);
-            } else if (event.type === "done") {
-              insertedCount = event.inserted ?? insertedCount;
-              setSearchStatus(`Done — ${insertedCount} org${insertedCount !== 1 ? "s" : ""} added to Discovered.`);
-              setSearchHistory(prev => [{ query: searchQuery, count: insertedCount, date: new Date().toLocaleDateString() }, ...prev.slice(0, 9)]);
-            } else if (event.type === "error") {
-              setSearchStatus(`Error: ${event.message}`);
-            }
-          } catch {}
-        }
+      const data = await res.json();
+      setSearchResults(data.results || []);
+      setSearchStatus(data.message || `Done — ${(data.results || []).length} org(s) added to Discovered.`);
+      if ((data.results || []).length > 0) {
+        setSearchHistory(prev => [{ query: searchQuery, count: data.results.length, date: new Date().toLocaleDateString() }, ...prev.slice(0, 9)]);
       }
     } catch (err) {
       setSearchStatus("Search error. Please try again.");
