@@ -94,26 +94,19 @@ export async function discoverOrgsWithCategory(
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
       messages: [{
         role: "user",
-        content: `You are a research assistant. Find UP TO ${count} US SMERF organizations suitable for hotel partnership outreach. SMERF = Social, Military, Educational, Religious, Fraternal.
+        content: `Search the web and find UP TO ${count} real US organizations that match this description:
 
-Today's category focus: ${category}
+${category}
 
 Requirements:
 - US-based national or regional organization
-- Has paid professional staff (any executive-level title)
+- Has professional paid staff (any executive-level title)
 - Members or staff travel for events, conventions, or programs
-- NOT already in pipeline below
+${alreadyIn !== "none yet" ? `\nEXCLUDE these already-known orgs: ${alreadyIn}\n` : ""}
+After searching, output ONLY this JSON (no prose, no explanation, no markdown):
+{"orgs":[{"name":"Full Organization Name","type":"type of org","website":"https://..."}]}
 
-ALREADY IN PIPELINE — exclude these: ${alreadyIn}
-
-MANDATORY RULES:
-1. You MUST respond with ONLY valid JSON — no explanations, no prose, no refusals
-2. Return however many you found (0 to ${count}) — fewer is fine if the category is narrow
-3. If you found nothing, return: {"orgs":[]}
-4. Do not explain why you could or couldn't find orgs — just return the JSON
-
-Your ENTIRE response must be this exact JSON structure:
-{"orgs":[{"name":"Full Organization Name","type":"SMERF sub-category","website":"https://www.example.org"}]}`,
+If you found nothing, output: {"orgs":[]}`,
       }],
     }),
   });

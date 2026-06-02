@@ -126,10 +126,15 @@ export async function POST(req: NextRequest) {
   // Translate query to category
   const category = await translateQueryToCategory(query.trim());
 
-  // Discover orgs with NO exclusion list — Claude gets full freedom to search the web
-  // for orgs matching the user's query. Dedup happens in JS below.
-  // Ask for 9 to have buffer; cap final results at 5.
-  const rawOrgs = await discoverOrgsWithCategory(category, [], 9);
+  // Discover orgs with NO exclusion list — Claude gets full freedom to search the web.
+  // Dedup happens in JS below. Ask for 9 to have buffer; cap final results at 5.
+  // Retry once if the first attempt returns nothing (Claude web search can be flaky).
+  let rawOrgs = await discoverOrgsWithCategory(category, [], 9);
+  if (!rawOrgs.length) {
+    // Retry with the original user query directly (skip translation layer)
+    await sleep(1500);
+    rawOrgs = await discoverOrgsWithCategory(query.trim(), [], 9);
+  }
 
   // Hard dedup against ALL existing orgs in DB — no duplicate inserts
   const orgs = rawOrgs.filter(o => !allExistingNorm.has(normalize(o.name))).slice(0, 5);
