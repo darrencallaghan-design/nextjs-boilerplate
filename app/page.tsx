@@ -4145,7 +4145,7 @@ SUBJECT: Re: ${entry.subjectLine}
                                     <div style={{ fontSize: 11, color: MUTED, marginBottom: 4 }}>{m.label}</div>
                                     <div style={{ fontSize: 26, fontWeight: 700, color: TEXT, letterSpacing: "-0.02em", marginBottom: 4 }}>{m.value}</div>
                                     <div style={{ fontSize: 10, color: m.t.color, fontWeight: 500, marginBottom: 2 }}>{m.t.label}</div>
-                                    <div style={{ fontSize: 10, color: MUTED }}>{m.t.sub || m.sub}</div>
+                                    <div style={{ fontSize: 10, color: MUTED }}>{m.sub}</div>
                                   </div>
                                 ))}
                               </div>
