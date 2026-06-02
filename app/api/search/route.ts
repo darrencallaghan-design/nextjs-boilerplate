@@ -106,10 +106,10 @@ export async function POST(req: NextRequest) {
     ? `You are ghostwriting for ${repNameSafe} at Engine. Match their exact voice:\n---\n${rep.writing_sample.substring(0, 600)}\n---\nStyle: ${rep.extracted_style || ""}`
     : `You are writing outreach for ${repNameSafe} at Engine, a hotel booking platform.`;
 
-  // For search, only exclude orgs already contacted (report_entries = sent emails).
-  // We do NOT pass auto_drafts to Claude — with 150+ pending orgs the list saturates
-  // Claude's context and it returns 0 results for common categories.
-  // We still dedup against auto_drafts at insert time to avoid DB duplicates.
+  // Load all existing orgs for DB-level dedup (prevents duplicate inserts).
+  // We do NOT pass these to Claude — the pipeline has 190+ orgs and passing that list
+  // causes Claude to return 0 results even for valid categories.
+  // Claude searches freely; JS handles dedup before inserting.
   const [{ data: contacted }, { data: allDrafts }] = await Promise.all([
     supabase.from("report_entries").select("organization").eq("rep_name", repNameSafe),
     supabase.from("auto_drafts").select("org_name").eq("rep_name", repNameSafe),
@@ -117,27 +117,30 @@ export async function POST(req: NextRequest) {
 
   const normalize = (s: string) => s.toLowerCase().replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
 
-  // List passed to Claude — only truly contacted orgs (keeps prompt short, unblocks common categories)
-  const contactedOrgs = (contacted || []).map((e: { organization: string }) => e.organization);
-
-  // Full set for DB-level dedup at insert time
+  // Full set for DB-level dedup at insert time only
   const allExistingNorm = new Set([
-    ...contactedOrgs.map(normalize),
+    ...(contacted || []).map((e: { organization: string }) => normalize(e.organization)),
     ...(allDrafts || []).map((e: { org_name: string }) => normalize(e.org_name)),
   ]);
 
   // Translate query to category
   const category = await translateQueryToCategory(query.trim());
 
-  // Discover orgs — pass only contacted (not the whole 190-org pipeline) so Claude isn't blocked
-  // Ask for 9 to have buffer after dedup; cap final results at 5
-  const rawOrgs = await discoverOrgsWithCategory(category, contactedOrgs, 9);
+  // Discover orgs with NO exclusion list — Claude gets full freedom to search the web
+  // for orgs matching the user's query. Dedup happens in JS below.
+  // Ask for 9 to have buffer; cap final results at 5.
+  const rawOrgs = await discoverOrgsWithCategory(category, [], 9);
 
-  // Hard dedup against ALL existing (contacted + all drafts) — no duplicates in DB
+  // Hard dedup against ALL existing orgs in DB — no duplicate inserts
   const orgs = rawOrgs.filter(o => !allExistingNorm.has(normalize(o.name))).slice(0, 5);
 
   if (!orgs.length) {
-    return NextResponse.json({ results: [], count: 0, message: "No new orgs found. Try a broader search.", _debug: { category, rawFound: rawOrgs.length, excludedFromPrompt: contactedOrgs.length, excludedTotal: allExistingNorm.size, rawOrgs: rawOrgs.map(o => o.name) } });
+    const allRawNorm = rawOrgs.map(o => normalize(o.name));
+    const allInPipeline = allRawNorm.every(n => allExistingNorm.has(n));
+    const message = rawOrgs.length > 0 && allInPipeline
+      ? `All ${rawOrgs.length} found org${rawOrgs.length !== 1 ? "s" : ""} already in your pipeline.`
+      : "No orgs found. Try a broader or different search.";
+    return NextResponse.json({ results: [], count: 0, message, _debug: { category, rawFound: rawOrgs.length, existingInDB: allExistingNorm.size, rawOrgs: rawOrgs.map(o => o.name) } });
   }
 
   const results: SearchOrgResult[] = [];
