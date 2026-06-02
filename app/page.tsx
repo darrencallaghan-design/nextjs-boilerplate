@@ -3012,7 +3012,7 @@ SUBJECT: Re: ${entry.subjectLine}
                   <div key={msg.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", flexDirection: msg.role === "user" ? "row-reverse" : "row", maxWidth: "100%" }}>
                     {/* Avatar */}
                     <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, marginTop: 2, background: msg.role === "user" ? "rgba(29,158,117,0.15)" : "rgba(99,82,233,0.12)", color: msg.role === "user" ? "#0F6E56" : "#4B39B8" }}>
-                      {msg.role === "user" ? (styleProfile?.repName?.[0] || "D") : "AI"}
+                      {msg.role === "user" ? (styleProfile?.repName?.[0] || "D") : "S"}
                     </div>
 
                     {/* Bubble */}
