@@ -789,25 +789,28 @@ export default function EngineAgent() {
   const [logSearch, setLogSearch] = useState("");
   const [logFilter, setLogFilter] = useState<"all" | "overdue" | "week" | "duplicates" | DealStage>("all");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  // AI Search
-  interface SearchResult {
-    id: string;
-    org_name: string;
-    org_type: string;
-    website: string;
-    research: string;
-    contact_name: string;
-    contact_title: string;
-    contact_email: string;
-    subject: string;
-    body: string;
-    inPipeline?: boolean;
+  // AI Chat
+  interface ChatOrgResult {
+    id: string; org_name: string; org_type: string; website: string;
+    research: string; contact_name: string; contact_title: string;
+    contact_email: string; subject: string; body: string; inPipeline?: boolean;
   }
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchRunning, setSearchRunning] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchStatus, setSearchStatus] = useState("");
-  const [searchHistory, setSearchHistory] = useState<{query: string; count: number; date: string}[]>([]);
+  interface ChatMessage {
+    id: string;
+    role: "user" | "assistant";
+    text: string;
+    intent?: "discover" | "pipeline" | "draft" | "mixed";
+    stats?: { label: string; value: number | string }[];
+    orgs?: ChatOrgResult[];
+    actions?: { label: string; prompt: string }[];
+    loading?: boolean;
+  }
+  interface ChatThread { id: string; title: string; updatedAt: string; }
+  const [chatInput, setChatInput] = useState("");
+  const [chatRunning, setChatRunning] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatThreadId, setChatThreadId] = useState<string | null>(null);
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
   // Research & Pitch
   interface PitchBrief {
     companySnapshot: { name: string; industry: string; size: string; locations: string; description: string; website: string };
@@ -1631,35 +1634,49 @@ export default function EngineAgent() {
     }
   };
 
-  const runSearch = async () => {
-    if (!searchQuery.trim() || searchRunning) return;
-    setSearchRunning(true);
-    setSearchResults([]);
-    setSearchStatus("Researching orgs — this takes about 60 seconds…");
+  const sendChatMessage = async (messageText?: string) => {
+    const text = (messageText || chatInput).trim();
+    if (!text || chatRunning) return;
+    setChatInput("");
+    setChatRunning(true);
+
+    const userMsgId = crypto.randomUUID();
+    const loadingMsgId = crypto.randomUUID();
+    setChatMessages(prev => [
+      ...prev,
+      { id: userMsgId, role: "user", text },
+      { id: loadingMsgId, role: "assistant", text: "", loading: true },
+    ]);
 
     try {
       const repName = styleProfile?.repName || "Darren";
-      const res = await fetch("/api/search", {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, repName }),
+        body: JSON.stringify({ message: text, threadId: chatThreadId, repName }),
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        setSearchStatus(errData.error || "Search failed. Please try again.");
-        return;
-      }
       const data = await res.json();
-      setSearchResults(data.results || []);
-      setSearchStatus(data.message || `Done — ${(data.results || []).length} org(s) added to Discovered.`);
-      if ((data.results || []).length > 0) {
-        setSearchHistory(prev => [{ query: searchQuery, count: data.results.length, date: new Date().toLocaleDateString() }, ...prev.slice(0, 9)]);
+      if (!res.ok) throw new Error(data.error || "Chat failed");
+
+      const reply = data.reply;
+      if (data.threadId && !chatThreadId) {
+        setChatThreadId(data.threadId);
+        setChatThreads(prev => [{ id: data.threadId, title: text.slice(0, 55) + (text.length > 55 ? "…" : ""), updatedAt: new Date().toISOString() }, ...prev]);
       }
+      setChatMessages(prev => prev.map(m =>
+        m.id === loadingMsgId
+          ? { id: loadingMsgId, role: "assistant", text: reply.text, intent: reply.intent, stats: reply.stats, orgs: reply.orgs, actions: reply.actions }
+          : m
+      ));
     } catch (err) {
-      setSearchStatus("Search error. Please try again.");
+      setChatMessages(prev => prev.map(m =>
+        m.id === loadingMsgId
+          ? { id: loadingMsgId, role: "assistant", text: "Something went wrong. Please try again." }
+          : m
+      ));
       console.error(err);
     } finally {
-      setSearchRunning(false);
+      setChatRunning(false);
     }
   };
 
@@ -2807,127 +2824,193 @@ SUBJECT: Re: ${entry.subjectLine}
           )}
         </div>
 
-        {/* ── AI Search section ── */}
+        {/* ── AI Chat section ── */}
         {sideNav === "search" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: BG }}>
+          <div style={{ flex: 1, display: "flex", overflow: "hidden", background: BG }}>
 
-            {/* Search bar area — always at top */}
-            <div style={{ background: SURFACE, borderBottom: `1px solid ${BORDER}`, padding: "20px 32px 16px", flexShrink: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, marginBottom: 12 }}>AI Search</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !searchRunning && searchQuery.trim()) runSearch(); }}
-                  placeholder="e.g. Fraternal associations with 100k+ members that host national conventions"
-                  style={{ flex: 1, padding: "9px 14px", fontSize: 13, border: `1px solid ${BORDER}`, borderRadius: 8, fontFamily: "inherit", color: TEXT, background: BG, outline: "none" }}
-                />
-                <button
-                  onClick={runSearch}
-                  disabled={searchRunning || !searchQuery.trim()}
-                  style={{ padding: "9px 20px", background: (searchRunning || !searchQuery.trim()) ? BORDER : ACCENT, color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: (searchRunning || !searchQuery.trim()) ? "not-allowed" : "pointer", fontFamily: "inherit", flexShrink: 0 }}
-                >
-                  {searchRunning ? "Searching…" : "Search"}
-                </button>
+            {/* Thread sidebar */}
+            <div style={{ width: 200, background: SURFACE, borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+              <button
+                onClick={() => { setChatMessages([]); setChatThreadId(null); }}
+                style={{ margin: 10, padding: "7px 10px", fontSize: 12, background: BG, border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer", color: TEXT_SECONDARY, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New chat
+              </button>
+              <div style={{ flex: 1, overflow: "auto", padding: "0 8px 8px" }}>
+                {chatThreads.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "0.05em", padding: "4px 4px 6px" }}>Recent</div>
+                    {chatThreads.slice(0, 12).map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => setChatThreadId(t.id)}
+                        style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", fontSize: 12, color: t.id === chatThreadId ? TEXT : TEXT_SECONDARY, background: t.id === chatThreadId ? BG : "transparent", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", lineHeight: 1.4, marginBottom: 2 }}
+                      >
+                        {t.title}
+                      </button>
+                    ))}
+                  </>
+                )}
+                {chatThreads.length === 0 && (
+                  <div style={{ padding: "8px 4px", fontSize: 11, color: MUTED, lineHeight: 1.5 }}>
+                    Ask anything — find orgs, check your pipeline, or re-draft an email.
+                  </div>
+                )}
               </div>
-              {searchStatus && (
-                <div style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>{searchStatus}</div>
-              )}
             </div>
 
-            {/* Scrollable body */}
-            <div style={{ flex: 1, overflow: "auto", padding: "20px 32px" }}>
+            {/* Main chat area */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
 
-              {/* Empty state: show quick searches + history only when no results and not running */}
-              {searchResults.length === 0 && !searchRunning && (
-                <div style={{ maxWidth: 640 }}>
-                  {searchHistory.length > 0 ? (
-                    <>
-                      <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.04em" }}>Recent searches</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 24 }}>
-                        {searchHistory.slice(0, 5).map((h, i) => (
-                          <button
-                            key={i}
-                            onClick={() => setSearchQuery(h.query)}
-                            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", fontSize: 12, color: TEXT_SECONDARY, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer", fontFamily: "inherit", gap: 12, textAlign: "left" }}
-                          >
-                            <span style={{ flex: 1 }}>{h.query}</span>
-                            <span style={{ color: MUTED, flexShrink: 0, fontSize: 11 }}>{h.count} added · {h.date}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.04em" }}>Try a search</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {[
-                          "Fraternal associations with 100k+ members that host national conventions",
-                          "Greek-letter sororities with 50k+ members and annual national conventions",
-                          "Veterans organizations with annual national gatherings, 100k+ members",
-                          "BGLO fraternities and sororities with national headquarters",
-                          "Religious denominations with 500k+ members and annual conferences",
-                        ].map(p => (
-                          <button
-                            key={p}
-                            onClick={() => setSearchQuery(p)}
-                            style={{ display: "block", textAlign: "left", padding: "8px 12px", fontSize: 12, color: TEXT_SECONDARY, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}
-                          >
-                            {p}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
+              {/* Header */}
+              <div style={{ padding: "10px 20px", borderBottom: `1px solid ${BORDER}`, background: SURFACE, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>AI Assistant</div>
+                {chatMessages.length > 0 && chatMessages.some(m => m.intent) && (
+                  <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 99, fontWeight: 600, background: chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent === "pipeline" ? "rgba(59,130,246,0.1)" : chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent === "draft" ? "rgba(234,179,8,0.1)" : "rgba(29,158,117,0.1)", color: chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent === "pipeline" ? "#1d4ed8" : chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent === "draft" ? "#92400e" : "#0F6E56" }}>
+                    {chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent}
+                  </span>
+                )}
+              </div>
 
-              {/* Results + in-progress skeleton */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 780 }}>
-                {searchResults.map(r => (
-                  <div key={r.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "16px 20px" }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>{r.org_name}</div>
-                        <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
-                          {r.org_type}
-                          {r.website ? <> · <a href={r.website} target="_blank" rel="noreferrer" style={{ color: ACCENT }}>{r.website.replace(/^https?:\/\/(www\.)?/, "")}</a></> : null}
-                        </div>
-                      </div>
-                      {r.inPipeline
-                        ? <span style={{ fontSize: 11, background: "rgba(99,102,241,0.1)", color: "#4338CA", padding: "3px 10px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>In Pipeline</span>
-                        : <span style={{ fontSize: 11, background: "rgba(29,158,117,0.1)", color: "#0F6E56", padding: "3px 10px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>Added to Discovered</span>
-                      }
+              {/* Messages */}
+              <div style={{ flex: 1, overflow: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+                {/* Empty state */}
+                {chatMessages.length === 0 && (
+                  <div style={{ maxWidth: 560, margin: "0 auto", paddingTop: 20 }}>
+                    <div style={{ fontSize: 13, color: TEXT_SECONDARY, marginBottom: 16, lineHeight: 1.6 }}>
+                      Ask anything about your pipeline or search for new orgs to pitch.
                     </div>
-                    {r.research && (
-                      <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginBottom: 10, lineHeight: 1.6, borderLeft: `2px solid ${BORDER}`, paddingLeft: 10 }}>
-                        {r.research.slice(0, 220)}{r.research.length > 220 ? "…" : ""}
-                      </div>
-                    )}
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {r.contact_name && (
-                        <span style={{ fontSize: 11, color: TEXT_SECONDARY, background: BG, border: `1px solid ${BORDER}`, padding: "3px 8px", borderRadius: 6 }}>
-                          {r.contact_name}{r.contact_title ? ` · ${r.contact_title}` : ""}
-                        </span>
-                      )}
-                      {r.contact_email && (
-                        <span style={{ fontSize: 11, color: ACCENT, background: BG, border: `1px solid ${BORDER}`, padding: "3px 8px", borderRadius: 6 }}>{r.contact_email}</span>
-                      )}
-                      {r.subject && (
-                        <span style={{ fontSize: 11, color: TEXT_SECONDARY, background: BG, border: `1px solid ${BORDER}`, padding: "3px 8px", borderRadius: 6 }}>
-                          &ldquo;{r.subject.slice(0, 55)}{r.subject.length > 55 ? "…" : ""}&rdquo;
-                        </span>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>Try asking</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {[
+                        "Find 5 BGLOs with national conventions I haven't pitched",
+                        "Which accounts have gone cold in the last 30 days?",
+                        "How many emails have I sent and what's my reply rate?",
+                        "Show me all my pending drafts",
+                        "Find large religious denominations with annual conferences",
+                        "Re-draft my email for Alpha Phi Alpha with a revenue angle",
+                      ].map(p => (
+                        <button key={p} onClick={() => sendChatMessage(p)}
+                          style={{ textAlign: "left", padding: "8px 12px", fontSize: 12, color: TEXT_SECONDARY, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Message bubbles */}
+                {chatMessages.map(msg => (
+                  <div key={msg.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", flexDirection: msg.role === "user" ? "row-reverse" : "row", maxWidth: "100%" }}>
+                    {/* Avatar */}
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, marginTop: 2, background: msg.role === "user" ? "rgba(29,158,117,0.15)" : "rgba(99,82,233,0.12)", color: msg.role === "user" ? "#0F6E56" : "#4B39B8" }}>
+                      {msg.role === "user" ? (styleProfile?.repName?.[0] || "D") : "AI"}
+                    </div>
+
+                    {/* Bubble */}
+                    <div style={{ background: msg.role === "user" ? BG : SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "10px 14px", maxWidth: "82%", fontSize: 13, lineHeight: 1.6, color: TEXT }}>
+
+                      {/* Loading state */}
+                      {msg.loading ? (
+                        <div style={{ display: "flex", gap: 4, alignItems: "center", padding: "2px 0" }}>
+                          {[0, 0.2, 0.4].map((d, i) => (
+                            <span key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: MUTED, display: "inline-block", animation: `spin 0.9s ${d}s infinite` }} />
+                          ))}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Text */}
+                          <div style={{ whiteSpace: "pre-wrap" }}>{msg.text}</div>
+
+                          {/* Stats row */}
+                          {msg.stats && msg.stats.length > 0 && (
+                            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                              {msg.stats.map((s, i) => (
+                                <div key={i} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 12px", textAlign: "center", minWidth: 70 }}>
+                                  <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>{s.value}</div>
+                                  <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>{s.label}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Org result cards */}
+                          {msg.orgs && msg.orgs.length > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                              {msg.orgs.map(r => (
+                                <div key={r.id} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 12px" }}>
+                                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+                                    <div>
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{r.org_name}</div>
+                                      <div style={{ fontSize: 11, color: MUTED, marginTop: 1 }}>
+                                        {r.org_type}{r.website ? <> · <a href={r.website} target="_blank" rel="noreferrer" style={{ color: ACCENT }}>{r.website.replace(/^https?:\/\/(www\.)?/, "")}</a></> : null}
+                                      </div>
+                                    </div>
+                                    {r.inPipeline
+                                      ? <span style={{ fontSize: 10, background: "rgba(99,102,241,0.1)", color: "#4338CA", padding: "2px 8px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>In Pipeline</span>
+                                      : <span style={{ fontSize: 10, background: "rgba(29,158,117,0.1)", color: "#0F6E56", padding: "2px 8px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>Added</span>
+                                    }
+                                  </div>
+                                  {r.research && <div style={{ fontSize: 11, color: TEXT_SECONDARY, lineHeight: 1.5, marginBottom: 6, borderLeft: `2px solid ${BORDER}`, paddingLeft: 8 }}>{r.research.slice(0, 180)}{r.research.length > 180 ? "…" : ""}</div>}
+                                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                                    {r.contact_name && <span style={{ fontSize: 10, color: TEXT_SECONDARY, background: SURFACE, border: `1px solid ${BORDER}`, padding: "2px 7px", borderRadius: 5 }}>{r.contact_name}{r.contact_title ? ` · ${r.contact_title}` : ""}</span>}
+                                    {r.contact_email && <span style={{ fontSize: 10, color: ACCENT, background: SURFACE, border: `1px solid ${BORDER}`, padding: "2px 7px", borderRadius: 5 }}>{r.contact_email}</span>}
+                                    {r.subject && <span style={{ fontSize: 10, color: TEXT_SECONDARY, background: SURFACE, border: `1px solid ${BORDER}`, padding: "2px 7px", borderRadius: 5 }}>&ldquo;{r.subject.slice(0, 50)}{r.subject.length > 50 ? "…" : ""}&rdquo;</span>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Action buttons */}
+                          {msg.actions && msg.actions.length > 0 && (
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                              {msg.actions.map((a, i) => (
+                                <button key={i} onClick={() => sendChatMessage(a.prompt)}
+                                  style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT_SECONDARY, cursor: "pointer", fontFamily: "inherit" }}>
+                                  {a.label} →
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
                 ))}
-                {searchRunning && (
-                  <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "16px 20px", color: MUTED, fontSize: 13, display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ display: "inline-block", width: 14, height: 14, border: `2px solid ${BORDER}`, borderTopColor: ACCENT, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    {searchStatus || "Researching…"}
+              </div>
+
+              {/* Input area */}
+              <div style={{ padding: "12px 16px", borderTop: `1px solid ${BORDER}`, background: SURFACE, flexShrink: 0 }}>
+                {/* Suggestion chips — only when no messages */}
+                {chatMessages.length === 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                    {["Stalled accounts", "Pending drafts", "Find new orgs", "Pipeline stats"].map(c => (
+                      <button key={c} onClick={() => sendChatMessage(c === "Stalled accounts" ? "Which accounts have gone cold in the last 30 days?" : c === "Pending drafts" ? "Show me all my pending drafts" : c === "Find new orgs" ? "Find 5 new SMERF orgs I haven't pitched" : "What is my pipeline status right now?")}
+                        style={{ fontSize: 11, padding: "3px 10px", borderRadius: 99, border: `1px solid ${BORDER}`, background: BG, color: TEXT_SECONDARY, cursor: "pointer", fontFamily: "inherit" }}>
+                        {c}
+                      </button>
+                    ))}
                   </div>
                 )}
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                  <textarea
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                    placeholder="Ask anything — find orgs, check pipeline, review drafts…"
+                    rows={1}
+                    style={{ flex: 1, resize: "none", fontSize: 13, padding: "8px 12px", border: `1px solid ${BORDER}`, borderRadius: 8, background: BG, color: TEXT, fontFamily: "inherit", lineHeight: 1.5, outline: "none" }}
+                  />
+                  <button
+                    onClick={() => sendChatMessage()}
+                    disabled={chatRunning || !chatInput.trim()}
+                    style={{ width: 36, height: 36, borderRadius: 8, background: (chatRunning || !chatInput.trim()) ? BORDER : ACCENT, border: "none", cursor: (chatRunning || !chatInput.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                  >
+                    <span style={{ color: "white", fontSize: 16, lineHeight: 1 }}>↑</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
