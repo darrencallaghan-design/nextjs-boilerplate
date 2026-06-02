@@ -3853,26 +3853,92 @@ SUBJECT: Re: ${entry.subjectLine}
                   ) : reportSubTab === "summary" ? (
                     <div>
                       {(() => {
-                        const todayStr = new Date().toISOString().slice(0, 10);
-                        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-                        // ── Regular outreach metrics ─────────────────────────────────────────
-                        const fuSent = sentEntries.filter(e => e.followUpSent).length;
-                        const fu2Sent = sentEntries.filter(e => e.followUp2Sent).length;
-                        const fu3Sent = sentEntries.filter(e => e.followUp3Sent).length;
-                        const totalEmailsAllTime = sentEntries.length + fuSent + fu2Sent + fu3Sent;
-                        const overdueCount = overdueEntries.length;
-                        const inPipelineCount = reportEntries.filter(e => ["Prospecting","Discovery","Proposal"].includes(e.stage)).length;
+                        // ── Date range filter state (local to this render) ───────────────────
+                        const dashRange = (window as unknown as Record<string,unknown>).__dashRange as string || "30d";
+                        const setDashRange = (r: string) => { (window as unknown as Record<string,unknown>).__dashRange = r; setReportSubTab("summary"); };
+                        const now = new Date();
+                        const cutoff = dashRange === "7d" ? new Date(now.getTime() - 7*86400000)
+                          : dashRange === "30d" ? new Date(now.getTime() - 30*86400000)
+                          : dashRange === "90d" ? new Date(now.getTime() - 90*86400000)
+                          : new Date(0);
+                        const prevCutoff = dashRange === "7d" ? new Date(now.getTime() - 14*86400000)
+                          : dashRange === "30d" ? new Date(now.getTime() - 60*86400000)
+                          : dashRange === "90d" ? new Date(now.getTime() - 180*86400000)
+                          : new Date(0);
+                        const cutoffStr = cutoff.toISOString().slice(0,10);
+                        const prevCutoffStr = prevCutoff.toISOString().slice(0,10);
+                        const todayStr = now.toISOString().slice(0,10);
+                        const thirtyDaysAgo = new Date(Date.now() - 30*86400000).toISOString().slice(0,10);
 
-                        // Top org types — regular outreach
-                        const outreachCatCounts: Record<string, number> = {};
+                        // ── Windowed entries ─────────────────────────────────────────────────
+                        const windowedSent = sentEntries.filter(e => (e.dateSent||"") >= cutoffStr);
+                        const prevWindowSent = sentEntries.filter(e => (e.dateSent||"") >= prevCutoffStr && (e.dateSent||"") < cutoffStr);
+                        const fuSent = windowedSent.filter(e => e.followUpSent).length;
+                        const fu2Sent = windowedSent.filter(e => e.followUp2Sent).length;
+                        const fu3Sent = windowedSent.filter(e => e.followUp3Sent).length;
+                        const totalEmails = windowedSent.length + fuSent + fu2Sent + fu3Sent;
+                        const prevTotalEmails = prevWindowSent.length + prevWindowSent.filter(e=>e.followUpSent).length + prevWindowSent.filter(e=>e.followUp2Sent).length + prevWindowSent.filter(e=>e.followUp3Sent).length;
+                        const orgsContacted = [...new Set(windowedSent.map(e => e.organization))].length;
+                        const prevOrgsContacted = [...new Set(prevWindowSent.map(e => e.organization))].length;
+                        const repliedEntries = windowedSent.filter(e => e.repliedAt);
+                        const replyRate = windowedSent.length > 0 ? Math.round((repliedEntries.length / windowedSent.length) * 100) : 0;
+                        const prevReplied = prevWindowSent.filter(e => e.repliedAt).length;
+                        const prevReplyRate = prevWindowSent.length > 0 ? Math.round((prevReplied / prevWindowSent.length) * 100) : 0;
+                        const inPipelineCount = visibleEntries.filter(e => ["Prospecting","Discovery","Proposal"].includes(e.stage)).length;
+
+                        // ── Trend helper ─────────────────────────────────────────────────────
+                        const trend = (cur: number, prev: number) => {
+                          if (prev === 0) return { label: "—", color: MUTED };
+                          const pct = Math.round(((cur - prev) / prev) * 100);
+                          if (pct > 0) return { label: `↑ ${pct}% vs prev period`, color: SUCCESS };
+                          if (pct < 0) return { label: `↓ ${Math.abs(pct)}% vs prev period`, color: ERROR };
+                          return { label: "→ flat vs prev period", color: MUTED };
+                        };
+
+                        // ── Weekly volume buckets (8 weeks) ─────────────────────────────────
+                        const weekBuckets: number[] = Array(8).fill(0);
                         sentEntries.forEach(e => {
-                          if (e.smerfCategory) outreachCatCounts[e.smerfCategory] = (outreachCatCounts[e.smerfCategory] || 0) + 1;
+                          if (!e.dateSent) return;
+                          const daysAgo = Math.floor((now.getTime() - new Date(e.dateSent).getTime()) / 86400000);
+                          const bucket = 7 - Math.floor(daysAgo / 7);
+                          if (bucket >= 0 && bucket < 8) weekBuckets[bucket]++;
                         });
-                        const topOutreachCats = Object.entries(outreachCatCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
-                        const maxOutreach = topOutreachCats[0]?.[1] || 1;
+                        const maxWeekly = Math.max(...weekBuckets, 1);
 
-                        // Pipeline stages
-                        const stageBreakdown = STAGES.map(s => ({ stage: s, count: reportEntries.filter(e => e.stage === s).length }));
+                        // ── Conversion funnel ────────────────────────────────────────────────
+                        const funnelBase = windowedSent.length || 1;
+                        const fuSentCount = windowedSent.filter(e => e.followUpSent).length;
+                        const proposalCount = windowedSent.filter(e => e.stage === "Proposal").length;
+                        const wonCount = windowedSent.filter(e => e.stage === "Closed Won").length;
+
+                        // ── Pipeline stages ──────────────────────────────────────────────────
+                        const stageBreakdown = STAGES.map(s => ({ stage: s, count: visibleEntries.filter(e => e.stage === s).length }));
+                        const stageMax = Math.max(...stageBreakdown.map(s => s.count), 1);
+
+                        // ── Reply rate by SMERF category ─────────────────────────────────────
+                        const catStats: Record<string, { sent: number; replied: number }> = {};
+                        windowedSent.forEach(e => {
+                          const cat = e.smerfCategory || "Other";
+                          if (!catStats[cat]) catStats[cat] = { sent: 0, replied: 0 };
+                          catStats[cat].sent++;
+                          if (e.repliedAt) catStats[cat].replied++;
+                        });
+                        const catRates = Object.entries(catStats)
+                          .map(([cat, { sent, replied }]) => ({ cat, rate: sent > 0 ? Math.round((replied/sent)*100) : 0, sent }))
+                          .filter(r => r.sent >= 2)
+                          .sort((a,b) => b.rate - a.rate)
+                          .slice(0, 6);
+                        const maxRate = Math.max(...catRates.map(r => r.rate), 1);
+
+                        // ── Recent activity feed ─────────────────────────────────────────────
+                        type ActivityItem = { text: string; time: string; color: string; ts: number };
+                        const activity: ActivityItem[] = [];
+                        visibleEntries.forEach(e => {
+                          if (e.repliedAt) activity.push({ text: `Reply — ${e.organization}`, time: new Date(e.repliedAt).toLocaleDateString(), color: SUCCESS, ts: new Date(e.repliedAt).getTime() });
+                          if (e.dateSent) activity.push({ text: `Sent to ${e.organization}`, time: new Date(e.dateSent).toLocaleDateString(), color: ACCENT, ts: new Date(e.dateSent).getTime() });
+                        });
+                        activity.sort((a,b) => b.ts - a.ts);
+                        const recentActivity = activity.slice(0, 6);
 
                         // ── Discovery metrics ────────────────────────────────────────────────
                         const discPending = discoveryAll.filter(d => d.status === "pending").length;
@@ -3882,23 +3948,27 @@ SUBJECT: Re: ${entry.subjectLine}
                         const discCustomer = discoveryAll.filter(d => d.dismiss_reason === "engine_customer").length;
                         const discDismissed = discoveryAll.filter(d => d.status === "dismissed").length;
                         const discTotal30d = discoveryAll.filter(d => d.created_at && d.created_at.slice(0,10) >= thirtyDaysAgo).length;
-
-                        // Top org types — discovery sent
+                        const discPrev30d = discoveryAll.filter(d => d.created_at && d.created_at.slice(0,10) >= new Date(Date.now()-60*86400000).toISOString().slice(0,10) && d.created_at.slice(0,10) < thirtyDaysAgo).length;
                         const discCatCounts: Record<string, number> = {};
-                        discoveryAll.filter(d => d.status === "sent").forEach(d => {
-                          if (d.org_type) discCatCounts[d.org_type] = (discCatCounts[d.org_type] || 0) + 1;
-                        });
+                        discoveryAll.filter(d => d.status === "sent").forEach(d => { if (d.org_type) discCatCounts[d.org_type] = (discCatCounts[d.org_type] || 0) + 1; });
                         const topDiscCats = Object.entries(discCatCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
                         const maxDisc = topDiscCats[0]?.[1] || 1;
-
                         const maxDismissal = Math.max(discWrongOrg, discBadDraft, discCustomer, 1);
+                        // Weekly discovery buckets (8 weeks)
+                        const discWeekBuckets: number[] = Array(8).fill(0);
+                        discoveryAll.forEach(d => {
+                          if (!d.created_at) return;
+                          const daysAgo = Math.floor((now.getTime() - new Date(d.created_at).getTime()) / 86400000);
+                          const bucket = 7 - Math.floor(daysAgo / 7);
+                          if (bucket >= 0 && bucket < 8) discWeekBuckets[bucket]++;
+                        });
+                        const maxDiscWeekly = Math.max(...discWeekBuckets, 1);
 
-                        // Bar chart helper
+                        // ── Shared helpers ────────────────────────────────────────────────────
                         const BarChart = ({ rows, max, color }: { rows: [string, number][]; max: number; color: string }) => (
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            {rows.length === 0 ? (
-                              <div style={{ fontSize: 12, color: MUTED, padding: "8px 0" }}>No data yet</div>
-                            ) : rows.map(([label, count], i) => (
+                            {rows.length === 0 ? <div style={{ fontSize: 12, color: MUTED, padding: "8px 0" }}>No data yet</div>
+                            : rows.map(([label, count], i) => (
                               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <div style={{ fontSize: 11, color: TEXT, width: 120, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
                                 <div style={{ flex: 1, height: 7, background: BORDER, borderRadius: 4, overflow: "hidden" }}>
@@ -3910,61 +3980,152 @@ SUBJECT: Re: ${entry.subjectLine}
                           </div>
                         );
 
+                        // Sparkline helper — renders as inline SVG
+                        const Sparkline = ({ buckets, max, color, height = 48 }: { buckets: number[]; max: number; color: string; height?: number }) => {
+                          const w = 300; const h = height; const n = buckets.length;
+                          const pts = buckets.map((v, i) => `${Math.round((i / (n-1)) * w)},${Math.round(h - (v / max) * (h - 4) - 2)}`).join(" ");
+                          const area = `${pts} ${w},${h} 0,${h}`;
+                          return (
+                            <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height, overflow: "visible" }}>
+                              <polygon points={area} fill={color} opacity={0.12} />
+                              <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              <circle cx={Math.round(((n-1)/(n-1))*w)} cy={Math.round(h - (buckets[n-1] / max) * (h-4) - 2)} r="3" fill={color} />
+                            </svg>
+                          );
+                        };
+
                         return (
                           <>
-                            {/* ── Section: Regular Outreach ──────────────────────────────── */}
-                            <div style={{ marginBottom: 24 }}>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Regular Outreach</div>
+                            {/* ── Date range selector ────────────────────────────────────────── */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 20 }}>
+                              <span style={{ fontSize: 11, color: MUTED, marginRight: 4 }}>Showing</span>
+                              {(["7d","30d","90d","all"] as const).map(r => (
+                                <button key={r} onClick={() => setDashRange(r)}
+                                  style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, border: `1px solid ${dashRange === r ? ACCENT : BORDER}`, background: dashRange === r ? "rgba(253,75,35,0.08)" : "transparent", color: dashRange === r ? ACCENT : MUTED, cursor: "pointer", fontFamily: "inherit", fontWeight: dashRange === r ? 600 : 400 }}>
+                                  {r === "all" ? "All time" : r}
+                                </button>
+                              ))}
+                            </div>
 
-                              {/* Metric cards */}
-                              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+                            {/* ── Row 1: Metric cards with trend indicators ──────────────────── */}
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+                              {[
+                                { label: "Emails sent", value: totalEmails, t: trend(totalEmails, prevTotalEmails), sub: `${windowedSent.length} initial + ${fuSent+fu2Sent+fu3Sent} follow-ups` },
+                                { label: "Orgs contacted", value: orgsContacted, t: trend(orgsContacted, prevOrgsContacted), sub: "unique orgs" },
+                                { label: "Reply rate", value: `${replyRate}%`, t: trend(replyRate, prevReplyRate), sub: `${repliedEntries.length} replies` },
+                                { label: "Active pipeline", value: inPipelineCount, t: { label: overdueEntries.length > 0 ? `⚠ ${overdueEntries.length} overdue` : "no overdue", color: overdueEntries.length > 0 ? ERROR : SUCCESS }, sub: "Prospecting + Discovery + Proposal" },
+                              ].map((m, i) => (
+                                <div key={i} style={{ background: SURFACE, borderRadius: 10, padding: "14px 16px", border: `1px solid ${BORDER}` }}>
+                                  <div style={{ fontSize: 11, color: MUTED, marginBottom: 4 }}>{m.label}</div>
+                                  <div style={{ fontSize: 26, fontWeight: 700, color: TEXT, letterSpacing: "-0.02em", marginBottom: 4 }}>{m.value}</div>
+                                  <div style={{ fontSize: 10, color: m.t.color, fontWeight: 500, marginBottom: 2 }}>{m.t.label}</div>
+                                  <div style={{ fontSize: 10, color: MUTED }}>{m.sub}</div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* ── Row 2: Volume trend + Conversion funnel ────────────────────── */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Email volume — 8 weeks</div>
+                                <Sparkline buckets={weekBuckets} max={maxWeekly} color={ACCENT} height={52} />
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: MUTED, marginTop: 4 }}>
+                                  <span>8 weeks ago</span><span>This week</span>
+                                </div>
+                              </div>
+                              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Conversion funnel</div>
                                 {[
-                                  { label: "Total Sent", value: totalEmailsAllTime, color: SUCCESS, sub: `${sentEntries.length} initial + ${fuSent+fu2Sent+fu3Sent} follow-ups` },
-                                  { label: "Orgs Contacted", value: [...new Set(sentEntries.map(e => e.organization))].length, color: ACCENT, sub: "unique organizations" },
-                                  { label: "Follow-ups Overdue", value: overdueCount, color: overdueCount > 0 ? ERROR : MUTED, sub: "need attention" },
-                                  { label: "In Pipeline", value: inPipelineCount, color: INFO, sub: "Prospecting · Discovery · Proposal" },
-                                ].map((m, i) => (
-                                  <div key={i} style={{ background: BG, borderRadius: 10, padding: "14px 16px", border: `1px solid ${BORDER}` }}>
-                                    <div style={{ fontSize: 11, color: MUTED, marginBottom: 4 }}>{m.label}</div>
-                                    <div style={{ fontSize: 26, fontWeight: 700, color: m.color, letterSpacing: "-0.02em", marginBottom: 2 }}>{m.value}</div>
-                                    <div style={{ fontSize: 10, color: MUTED }}>{m.sub}</div>
+                                  { label: "Initial sent", val: windowedSent.length, pct: 100, color: ACCENT },
+                                  { label: "Follow-up sent", val: fuSentCount, pct: Math.round((fuSentCount/funnelBase)*100), color: ACCENT },
+                                  { label: "Reply received", val: repliedEntries.length, pct: replyRate, color: SUCCESS },
+                                  { label: "Proposal stage", val: proposalCount, pct: Math.round((proposalCount/funnelBase)*100), color: INFO },
+                                  { label: "Closed won", val: wonCount, pct: Math.round((wonCount/funnelBase)*100), color: "#1D9E75" },
+                                ].map(({ label, val, pct, color }, i) => (
+                                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: i < 4 ? `1px solid ${BORDER}` : "none" }}>
+                                    <span style={{ fontSize: 11, color: TEXT_SECONDARY, width: 90, flexShrink: 0 }}>{label}</span>
+                                    <div style={{ flex: 1, height: 7, background: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                                      <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 4 }} />
+                                    </div>
+                                    <span style={{ fontSize: 11, color, fontWeight: 600, width: 32, textAlign: "right", flexShrink: 0 }}>{val > 0 ? `${pct}%` : "—"}</span>
                                   </div>
                                 ))}
                               </div>
+                            </div>
 
-                              {/* Pipeline stages + Top org types side by side */}
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 0 }}>
-                                <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
-                                  <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Pipeline — click to filter Activity Log</div>
-                                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                    {stageBreakdown.map(({ stage, count }, i) => {
-                                      const sc = STAGE_COLORS[stage as DealStage];
-                                      const isActive = logFilter === stage;
-                                      return (
-                                        <button key={i}
-                                          onClick={() => { setLogFilter(isActive ? "all" : stage as DealStage); setReportSubTab("log"); }}
-                                          style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: `1px solid ${isActive ? sc?.text || BORDER : BORDER}`, background: isActive ? (sc?.bg || BG) : "transparent", cursor: count > 0 ? "pointer" : "default", fontFamily: "inherit", textAlign: "left", transition: "all 0.1s" }}>
-                                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: sc?.bg || BG, color: sc?.text || MUTED, flexShrink: 0, whiteSpace: "nowrap" }}>{stage}</span>
-                                          <div style={{ flex: 1, height: 6, background: BORDER, borderRadius: 4, overflow: "hidden" }}>
-                                            <div style={{ width: `${Math.round((count / Math.max(reportEntries.filter(e => e.status === "Sent").length, 1)) * 100)}%`, height: "100%", background: sc?.text || MUTED, borderRadius: 4 }} />
-                                          </div>
-                                          <span style={{ fontSize: 12, fontWeight: 600, color: count > 0 ? (sc?.text || MUTED) : MUTED, width: 24, textAlign: "right", flexShrink: 0 }}>{count}</span>
-                                        </button>
-                                      );
-                                    })}
+                            {/* ── Row 3: Pipeline stages + Reply by category + Activity feed ─── */}
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
+                              {/* Pipeline stages */}
+                              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Pipeline stages</div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                  {stageBreakdown.map(({ stage, count }, i) => {
+                                    const sc = STAGE_COLORS[stage as DealStage];
+                                    return (
+                                      <button key={i}
+                                        onClick={() => { setLogFilter(logFilter === stage ? "all" : stage as DealStage); setReportSubTab("log"); }}
+                                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderRadius: 7, border: `1px solid ${logFilter === stage ? (sc?.text||BORDER) : "transparent"}`, background: logFilter === stage ? (sc?.bg||BG) : "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                                        <div style={{ width: 7, height: 7, borderRadius: "50%", background: sc?.text || MUTED, flexShrink: 0 }} />
+                                        <span style={{ fontSize: 11, color: TEXT, flex: 1 }}>{stage}</span>
+                                        <div style={{ width: 60, height: 5, background: BORDER, borderRadius: 3, overflow: "hidden" }}>
+                                          <div style={{ width: `${Math.round((count/stageMax)*100)}%`, height: "100%", background: sc?.text||MUTED, borderRadius: 3 }} />
+                                        </div>
+                                        <span style={{ fontSize: 11, color: TEXT_SECONDARY, width: 18, textAlign: "right" }}>{count}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${BORDER}`, fontSize: 10, color: MUTED }}>Click any stage to filter Activity Log</div>
+                              </div>
+
+                              {/* Reply rate by category */}
+                              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Reply rate by category</div>
+                                {catRates.length === 0 ? (
+                                  <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.6 }}>Send to 2+ orgs per category to see rates here.</div>
+                                ) : (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                                    {catRates.map(({ cat, rate, sent }, i) => (
+                                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <div style={{ fontSize: 11, color: TEXT, width: 100, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat}</div>
+                                        <div style={{ flex: 1, height: 6, background: BORDER, borderRadius: 3, overflow: "hidden" }}>
+                                          <div style={{ width: `${Math.round((rate/maxRate)*100)}%`, height: "100%", background: rate > 10 ? SUCCESS : rate > 5 ? INFO : MUTED, borderRadius: 3 }} />
+                                        </div>
+                                        <span style={{ fontSize: 11, color: rate > 10 ? SUCCESS : rate > 5 ? INFO : MUTED, width: 28, textAlign: "right", flexShrink: 0, fontWeight: 600 }}>{rate}%</span>
+                                      </div>
+                                    ))}
+                                    {catRates.length > 0 && (
+                                      <div style={{ marginTop: 6, fontSize: 10, color: MUTED, lineHeight: 1.5 }}>
+                                        {catRates[0].rate > catRates[catRates.length-1].rate * 2 ? `${catRates[0].cat} replies ${Math.round(catRates[0].rate/Math.max(catRates[catRates.length-1].rate,1))}× more than ${catRates[catRates.length-1].cat}` : "Rates are relatively even across categories"}
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
-                                <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
-                                  <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Top org types sent</div>
-                                  <BarChart rows={topOutreachCats} max={maxOutreach} color={ACCENT} />
-                                  {topOutreachCats.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>No outreach sent yet</div>}
-                                </div>
+                                )}
+                              </div>
+
+                              {/* Recent activity feed */}
+                              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Recent activity</div>
+                                {recentActivity.length === 0 ? (
+                                  <div style={{ fontSize: 12, color: MUTED }}>No activity yet</div>
+                                ) : (
+                                  <div style={{ display: "flex", flexDirection: "column" }}>
+                                    {recentActivity.map((a, i) => (
+                                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 0", borderBottom: i < recentActivity.length-1 ? `1px solid ${BORDER}` : "none" }}>
+                                        <div style={{ width: 6, height: 6, borderRadius: "50%", background: a.color, marginTop: 4, flexShrink: 0 }} />
+                                        <div style={{ flex: 1, fontSize: 11, color: TEXT_SECONDARY, lineHeight: 1.4 }}>{a.text}</div>
+                                        <div style={{ fontSize: 10, color: MUTED, flexShrink: 0 }}>{a.time}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
 
+                            {/* ── Divider ────────────────────────────────────────────────────── */}
                             <div style={{ height: 1, background: BORDER, marginBottom: 24 }} />
 
-                            {/* ── Section: Daily Discovery ───────────────────────────────── */}
+                            {/* ── Section: Daily Discovery (preserved) ────────────────────── */}
                             <div>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                                 <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em" }}>Daily Discovery</div>
@@ -3972,34 +4133,42 @@ SUBJECT: Re: ${entry.subjectLine}
                                 {discoveryAllLoaded && <button onClick={() => { setDiscoveryAllLoaded(false); loadDiscoveryAll(); }} style={{ fontSize: 11, color: MUTED, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", marginLeft: "auto" }}>↻ Refresh</button>}
                               </div>
 
-                              {/* Discovery metric cards */}
+                              {/* Discovery metrics */}
                               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
                                 {[
-                                  { label: "Discovered (30d)", value: discTotal30d, color: ACCENT, sub: "3 orgs/day target" },
-                                  { label: "Sent", value: discSent, color: SUCCESS, sub: discTotal30d > 0 ? `${Math.round((discSent/Math.max(discoveryAll.length,1))*100)}% send rate` : "—" },
-                                  { label: "Dismissed", value: discDismissed, color: MUTED, sub: `${discCustomer} customer · ${discWrongOrg} wrong org · ${discBadDraft} bad draft` },
-                                  { label: "Pending Review", value: discPending, color: INFO, sub: "waiting in Follow-Ups" },
+                                  { label: "Discovered (30d)", value: discTotal30d, t: trend(discTotal30d, discPrev30d), sub: "3 orgs/day target" },
+                                  { label: "Sent", value: discSent, t: { label: discTotal30d > 0 ? `${Math.round((discSent/Math.max(discoveryAll.length,1))*100)}% send rate` : "—", color: MUTED }, sub: "from discovery" },
+                                  { label: "Dismissed", value: discDismissed, t: { label: `${discCustomer} customer · ${discWrongOrg} wrong org · ${discBadDraft} bad draft`, color: MUTED }, sub: "total dismissed" },
+                                  { label: "Pending Review", value: discPending, t: { label: discPending > 5 ? "review backlog building" : "inbox healthy", color: discPending > 5 ? ERROR : SUCCESS }, sub: "waiting in Follow-Ups" },
                                 ].map((m, i) => (
-                                  <div key={i} style={{ background: BG, borderRadius: 10, padding: "14px 16px", border: `1px solid ${BORDER}` }}>
+                                  <div key={i} style={{ background: SURFACE, borderRadius: 10, padding: "14px 16px", border: `1px solid ${BORDER}` }}>
                                     <div style={{ fontSize: 11, color: MUTED, marginBottom: 4 }}>{m.label}</div>
-                                    <div style={{ fontSize: 26, fontWeight: 700, color: m.color, letterSpacing: "-0.02em", marginBottom: 2 }}>{m.value}</div>
-                                    <div style={{ fontSize: 10, color: MUTED }}>{m.sub}</div>
+                                    <div style={{ fontSize: 26, fontWeight: 700, color: TEXT, letterSpacing: "-0.02em", marginBottom: 4 }}>{m.value}</div>
+                                    <div style={{ fontSize: 10, color: m.t.color, fontWeight: 500, marginBottom: 2 }}>{m.t.label}</div>
+                                    <div style={{ fontSize: 10, color: MUTED }}>{m.t.sub || m.sub}</div>
                                   </div>
                                 ))}
                               </div>
 
-                              {/* Top org types + Dismissal reasons side by side */}
+                              {/* Discovery volume sparkline */}
+                              <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Discovery volume — 8 weeks</div>
+                                <Sparkline buckets={discWeekBuckets} max={maxDiscWeekly} color={INFO} height={44} />
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: MUTED, marginTop: 4 }}>
+                                  <span>8 weeks ago</span><span>This week</span>
+                                </div>
+                              </div>
+
+                              {/* Top org types + Dismissal reasons */}
                               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                                 <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Top org types sent</div>
-                                  <BarChart rows={topDiscCats} max={maxDisc} color={ACCENT} />
-                                  {topDiscCats.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>Send some discovery emails to see which org types are working</div>}
+                                  <BarChart rows={topDiscCats} max={maxDisc} color={INFO} />
+                                  {topDiscCats.length === 0 && <div style={{ fontSize: 12, color: MUTED }}>Send discovery emails to see which org types are working</div>}
                                 </div>
                                 <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px" }}>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Dismissal reasons</div>
-                                  {discDismissed === 0 ? (
-                                    <div style={{ fontSize: 12, color: MUTED }}>No dismissals yet</div>
-                                  ) : (
+                                  {discDismissed === 0 ? <div style={{ fontSize: 12, color: MUTED }}>No dismissals yet</div> : (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                                       {[
                                         { label: "Engine customer", count: discCustomer, color: SUCCESS },
@@ -4007,9 +4176,9 @@ SUBJECT: Re: ${entry.subjectLine}
                                         { label: "Bad draft", count: discBadDraft, color: INFO },
                                       ].map(({ label, count, color }, i) => (
                                         <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                          <div style={{ fontSize: 11, color: TEXT, width: 90, flexShrink: 0 }}>{label}</div>
+                                          <div style={{ fontSize: 11, color: TEXT, width: 100, flexShrink: 0 }}>{label}</div>
                                           <div style={{ flex: 1, height: 7, background: BORDER, borderRadius: 4, overflow: "hidden" }}>
-                                            <div style={{ width: `${Math.round((count / maxDismissal) * 100)}%`, height: "100%", background: color, borderRadius: 4 }} />
+                                            <div style={{ width: `${Math.round((count/maxDismissal)*100)}%`, height: "100%", background: color, borderRadius: 4 }} />
                                           </div>
                                           <div style={{ fontSize: 11, color: TEXT_SECONDARY, width: 20, textAlign: "right" }}>{count}</div>
                                         </div>
