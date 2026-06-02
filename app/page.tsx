@@ -1661,9 +1661,12 @@ export default function EngineAgent() {
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
-          if (!line.trim()) continue;
+          // SSE format: lines starting with "data: "
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
           try {
-            const event = JSON.parse(line);
+            const event = JSON.parse(jsonStr);
             if (event.type === "status") {
               setSearchStatus(event.message);
             } else if (event.type === "org") {
@@ -2835,118 +2838,121 @@ SUBJECT: Re: ${entry.subjectLine}
         {/* ── AI Search section ── */}
         {sideNav === "search" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: BG }}>
-            {/* Header */}
-            <div style={{ padding: "16px 24px 12px", borderBottom: `1px solid ${BORDER}`, background: SURFACE, flexShrink: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>AI Search</div>
-              <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>Describe what you&apos;re looking for. Full research + contacts + draft for each result.</div>
+
+            {/* Search bar area — always at top */}
+            <div style={{ background: SURFACE, borderBottom: `1px solid ${BORDER}`, padding: "20px 32px 16px", flexShrink: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, marginBottom: 12 }}>AI Search</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !searchRunning && searchQuery.trim()) runSearch(); }}
+                  placeholder="e.g. Fraternal associations with 100k+ members that host national conventions"
+                  style={{ flex: 1, padding: "9px 14px", fontSize: 13, border: `1px solid ${BORDER}`, borderRadius: 8, fontFamily: "inherit", color: TEXT, background: BG, outline: "none" }}
+                />
+                <button
+                  onClick={runSearch}
+                  disabled={searchRunning || !searchQuery.trim()}
+                  style={{ padding: "9px 20px", background: (searchRunning || !searchQuery.trim()) ? BORDER : ACCENT, color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: (searchRunning || !searchQuery.trim()) ? "not-allowed" : "pointer", fontFamily: "inherit", flexShrink: 0 }}
+                >
+                  {searchRunning ? "Searching…" : "Search"}
+                </button>
+              </div>
+              {searchStatus && (
+                <div style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>{searchStatus}</div>
+              )}
             </div>
 
-            {/* Two-panel layout: left = search input, right = results */}
-            <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+            {/* Scrollable body */}
+            <div style={{ flex: 1, overflow: "auto", padding: "20px 32px" }}>
 
-              {/* Left: query input + history */}
-              <div style={{ width: 300, background: SURFACE, borderRight: `1px solid ${BORDER}`, display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0 }}>
-                <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
-                  <textarea
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="e.g. Find 10 fraternal associations that host national conventions and have 100k+ members across the US"
-                    rows={5}
-                    style={{ width: "100%", padding: "10px 12px", fontSize: 13, border: `1px solid ${BORDER}`, borderRadius: 8, resize: "vertical", fontFamily: "inherit", color: TEXT, background: BG, boxSizing: "border-box" }}
-                  />
-                  <button
-                    onClick={runSearch}
-                    disabled={searchRunning || !searchQuery.trim()}
-                    style={{ padding: "9px 16px", background: searchRunning ? BORDER : ACCENT, color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: searchRunning ? "not-allowed" : "pointer", fontFamily: "inherit" }}
-                  >
-                    {searchRunning ? "Searching…" : "Search"}
-                  </button>
-                  {searchStatus && (
-                    <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.5 }}>{searchStatus}</div>
+              {/* Empty state: show quick searches + history only when no results and not running */}
+              {searchResults.length === 0 && !searchRunning && (
+                <div style={{ maxWidth: 640 }}>
+                  {searchHistory.length > 0 ? (
+                    <>
+                      <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.04em" }}>Recent searches</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 24 }}>
+                        {searchHistory.slice(0, 5).map((h, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setSearchQuery(h.query)}
+                            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", fontSize: 12, color: TEXT_SECONDARY, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer", fontFamily: "inherit", gap: 12, textAlign: "left" }}
+                          >
+                            <span style={{ flex: 1 }}>{h.query}</span>
+                            <span style={{ color: MUTED, flexShrink: 0, fontSize: 11 }}>{h.count} added · {h.date}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.04em" }}>Try a search</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {[
+                          "Fraternal associations with 100k+ members that host national conventions",
+                          "Greek-letter sororities with 50k+ members and annual national conventions",
+                          "Veterans organizations with annual national gatherings, 100k+ members",
+                          "BGLO fraternities and sororities with national headquarters",
+                          "Religious denominations with 500k+ members and annual conferences",
+                        ].map(p => (
+                          <button
+                            key={p}
+                            onClick={() => setSearchQuery(p)}
+                            style={{ display: "block", textAlign: "left", padding: "8px 12px", fontSize: 12, color: TEXT_SECONDARY, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
+              )}
 
-                {/* Quick searches */}
-                <div style={{ padding: "0 20px 12px" }}>
-                  <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>Quick searches</div>
-                  {[
-                    "Greek-letter sororities with 50k+ members and annual national conventions",
-                    "Veterans organizations with annual national gatherings, 100k+ members",
-                    "Religious denominations with 500k+ members and annual conferences",
-                    "BGLO fraternities and sororities with national headquarters",
-                  ].map(prompt => (
-                    <button
-                      key={prompt}
-                      onClick={() => setSearchQuery(prompt)}
-                      style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", marginBottom: 4, fontSize: 11, color: TEXT_SECONDARY, background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", lineHeight: 1.4 }}
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Search history */}
-                {searchHistory.length > 0 && (
-                  <div style={{ padding: "0 20px 16px", borderTop: `1px solid ${BORDER}`, paddingTop: 12 }}>
-                    <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em" }}>Recent</div>
-                    {searchHistory.slice(0, 5).map((h, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setSearchQuery(h.query)}
-                        style={{ display: "flex", width: "100%", alignItems: "flex-start", justifyContent: "space-between", padding: "6px 10px", marginBottom: 3, fontSize: 11, color: TEXT_SECONDARY, background: "transparent", border: `1px solid ${BORDER}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit", gap: 8 }}
-                      >
-                        <span style={{ flex: 1, textAlign: "left", lineHeight: 1.4 }}>{h.query.slice(0, 60)}{h.query.length > 60 ? "…" : ""}</span>
-                        <span style={{ color: MUTED, flexShrink: 0 }}>{h.count} added</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Right: streaming results */}
-              <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
-                {searchResults.length === 0 && !searchRunning && (
-                  <div style={{ textAlign: "center", color: MUTED, fontSize: 13, paddingTop: 60 }}>
-                    Search results will appear here.<br />
-                    <span style={{ fontSize: 11 }}>Full research, contacts, and drafted email for each org.</span>
-                  </div>
-                )}
-                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  {searchResults.map(r => (
-                    <div key={r.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
-                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>{r.org_name}</div>
-                          <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{r.org_type}{r.website ? ` · ` : ""}{r.website && <a href={r.website} target="_blank" rel="noreferrer" style={{ color: ACCENT }}>{r.website.replace(/^https?:\/\//, "")}</a>}</div>
+              {/* Results + in-progress skeleton */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 780 }}>
+                {searchResults.map(r => (
+                  <div key={r.id} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "16px 20px" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>{r.org_name}</div>
+                        <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+                          {r.org_type}
+                          {r.website ? <> · <a href={r.website} target="_blank" rel="noreferrer" style={{ color: ACCENT }}>{r.website.replace(/^https?:\/\/(www\.)?/, "")}</a></> : null}
                         </div>
-                        <span style={{ fontSize: 11, background: "rgba(29,158,117,0.1)", color: "#0F6E56", padding: "3px 10px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>Added</span>
                       </div>
-                      {r.research && (
-                        <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginBottom: 12, lineHeight: 1.6, borderLeft: `3px solid ${BORDER}`, paddingLeft: 10 }}>
-                          {r.research.slice(0, 200)}{r.research.length > 200 ? "…" : ""}
-                        </div>
+                      <span style={{ fontSize: 11, background: "rgba(29,158,117,0.1)", color: "#0F6E56", padding: "3px 10px", borderRadius: 99, flexShrink: 0, fontWeight: 600 }}>Added to Discovered</span>
+                    </div>
+                    {r.research && (
+                      <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginBottom: 10, lineHeight: 1.6, borderLeft: `2px solid ${BORDER}`, paddingLeft: 10 }}>
+                        {r.research.slice(0, 220)}{r.research.length > 220 ? "…" : ""}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {r.contact_name && (
+                        <span style={{ fontSize: 11, color: TEXT_SECONDARY, background: BG, border: `1px solid ${BORDER}`, padding: "3px 8px", borderRadius: 6 }}>
+                          {r.contact_name}{r.contact_title ? ` · ${r.contact_title}` : ""}
+                        </span>
                       )}
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        {r.contact_name && (
-                          <span style={{ fontSize: 11, color: TEXT_SECONDARY, background: BG, border: `1px solid ${BORDER}`, padding: "3px 8px", borderRadius: 6 }}>
-                            {r.contact_name} · {r.contact_title}
-                          </span>
-                        )}
-                        {r.contact_email && (
-                          <span style={{ fontSize: 11, color: ACCENT, background: BG, border: `1px solid ${BORDER}`, padding: "3px 8px", borderRadius: 6 }}>{r.contact_email}</span>
-                        )}
-                        {r.subject && (
-                          <span style={{ fontSize: 11, color: TEXT_SECONDARY, background: BG, border: `1px solid ${BORDER}`, padding: "3px 8px", borderRadius: 6 }}>Subject: {r.subject.slice(0, 50)}{r.subject.length > 50 ? "…" : ""}</span>
-                        )}
-                      </div>
+                      {r.contact_email && (
+                        <span style={{ fontSize: 11, color: ACCENT, background: BG, border: `1px solid ${BORDER}`, padding: "3px 8px", borderRadius: 6 }}>{r.contact_email}</span>
+                      )}
+                      {r.subject && (
+                        <span style={{ fontSize: 11, color: TEXT_SECONDARY, background: BG, border: `1px solid ${BORDER}`, padding: "3px 8px", borderRadius: 6 }}>
+                          &ldquo;{r.subject.slice(0, 55)}{r.subject.length > 55 ? "…" : ""}&rdquo;
+                        </span>
+                      )}
                     </div>
-                  ))}
-                  {searchRunning && (
-                    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20, color: MUTED, fontSize: 13 }}>
-                      <span style={{ marginRight: 8 }}>⏳</span>Researching next org…
-                    </div>
-                  )}
-                </div>
+                  </div>
+                ))}
+                {searchRunning && (
+                  <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "16px 20px", color: MUTED, fontSize: 13, display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ display: "inline-block", width: 14, height: 14, border: `2px solid ${BORDER}`, borderTopColor: ACCENT, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    {searchStatus || "Researching…"}
+                  </div>
+                )}
               </div>
             </div>
           </div>

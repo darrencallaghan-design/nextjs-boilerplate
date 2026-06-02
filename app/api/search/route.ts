@@ -68,9 +68,10 @@ Category string:`,
 
 export async function POST(req: NextRequest) {
   const headers = {
-    "Content-Type": "text/plain; charset=utf-8",
-    "Cache-Control": "no-cache",
-    "X-Content-Type-Options": "nosniff",
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",          // disable Nginx/CDN buffering
+    "Connection": "keep-alive",
   };
 
   let body: { query?: string; repName?: string };
@@ -88,8 +89,9 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
+      // SSE format: "data: <json>\n\n" — forces flush through Vercel/CDN buffering
       const emit = (event: object) => {
-        controller.enqueue(enc.encode(JSON.stringify(event) + "\n"));
+        controller.enqueue(enc.encode("data: " + JSON.stringify(event) + "\n\n"));
       };
 
       try {
