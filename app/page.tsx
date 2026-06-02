@@ -2802,7 +2802,7 @@ SUBJECT: Re: ${entry.subjectLine}
             ["outreach", "✉", "Outreach"],
             ["reports", "📊", "Reports"],
             ["research", "🔍", "Research"],
-            ["search", "✦", "AI Search"],
+            ["search", "✦", "Scout"],
           ] as [typeof sideNav, string, string][]).map(([key, icon, label]) => (
             <button
               key={key}
@@ -2885,7 +2885,7 @@ SUBJECT: Re: ${entry.subjectLine}
 
               {/* Header */}
               <div style={{ padding: "10px 20px", borderBottom: `1px solid ${BORDER}`, background: SURFACE, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>AI Assistant</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>Scout</div>
                 {chatMessages.length > 0 && chatMessages.some(m => m.intent) && (
                   <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 99, fontWeight: 600, background: chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent === "pipeline" ? "rgba(59,130,246,0.1)" : chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent === "draft" ? "rgba(234,179,8,0.1)" : "rgba(29,158,117,0.1)", color: chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent === "pipeline" ? "#1d4ed8" : chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent === "draft" ? "#92400e" : "#0F6E56" }}>
                     {chatMessages.filter(m=>m.intent).slice(-1)[0]?.intent}
