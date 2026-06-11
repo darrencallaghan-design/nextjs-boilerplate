@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { callAnthropic } from "@/lib/anthropic";
 
 // Node.js runtime — supports long-running fetch
 export const maxDuration = 300;
@@ -66,55 +67,33 @@ async function doResearch(
 ): Promise<string> {
   const prompt = buildPrompt(company, domain, notes, segmentFocus);
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 180_000); // 3-min hard abort
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": KEY(),
-          "anthropic-version": "2023-06-01",
-          "anthropic-beta": "web-search-2025-03-05",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 5000,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-      clearTimeout(timeout);
+  // Budget math: 2 attempts x 110s + backoff fits inside totalBudgetMs 240s,
+  // which fits inside maxDuration 300s. Never let retries outlive the function.
+  const result = await callAnthropic({
+    route: "partner-research",
+    betas: ["web-search-2025-03-05"],
+    attemptTimeoutMs: 110_000,
+    maxAttempts: 2,
+    totalBudgetMs: 240_000,
+    body: {
+      model: "claude-sonnet-4-6",
+      max_tokens: 5000,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
+      messages: [{ role: "user", content: prompt }],
+    },
+  });
 
-      if (res.status === 429) {
-        await new Promise(r => setTimeout(r, 3000));
-        continue;
-      }
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Anthropic ${res.status}: ${text.slice(0, 300)}`);
-      }
+  if (!result.ok) throw new Error(result.error);
 
-      const data = await res.json();
-      const textBlocks: string[] = (data.content || [])
-        .filter((b: { type: string }) => b.type === "text")
-        .map((b: { text: string }) => b.text);
+  const textBlocks: string[] = (result.data.content || [])
+    .filter((b: { type: string }) => b.type === "text")
+    .map((b: { text: string }) => b.text);
 
-      // Web search returns multiple blocks — find the one with the brief JSON
-      const briefBlock = textBlocks.find(
-        b => b.includes('"snapshot"') || b.includes('"fitScore"') || b.includes('"fitTier"')
-      );
-      return briefBlock ?? textBlocks[textBlocks.length - 1] ?? "";
-
-    } catch (err) {
-      clearTimeout(timeout);
-      if (attempt === 1) throw err;
-      await new Promise(r => setTimeout(r, 1000));
-    }
-  }
-  throw new Error("Max retries exceeded");
+  // Web search returns multiple blocks — find the one with the brief JSON
+  const briefBlock = textBlocks.find(
+    b => b.includes('"snapshot"') || b.includes('"fitScore"') || b.includes('"fitTier"')
+  );
+  return briefBlock ?? textBlocks[textBlocks.length - 1] ?? "";
 }
 
 // ─── ZoomInfo enrichment (optional, fast) ────────────────────────────────────

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { callAnthropic, textOf } from "@/lib/anthropic";
 
 // claude-sonnet with web search can take 2-3 min; bumped to match partner-research
 export const maxDuration = 300;
@@ -26,31 +27,32 @@ Then find and report on:
 
 Write 6-8 specific, factual research notes using real details you found. Be precise — name actual events, actual attendance numbers, actual cities, actual programs. No generic filler. Each note should contain at least one concrete fact the rep can reference in their outreach email.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": "web-search-2025-03-05",
-    },
-    body: JSON.stringify({
+  // Timeout + retry + spend logging via shared helper. Previously this was a
+  // bare fetch with no abort — when the web-search call ran past maxDuration,
+  // Vercel killed the function and the client saw a connection drop (HTTP 000).
+  const result = await callAnthropic({
+    route: "research",
+    betas: ["web-search-2025-03-05"],
+    attemptTimeoutMs: 120_000,
+    maxAttempts: 2,
+    totalBudgetMs: 250_000,
+    body: {
       model: "claude-sonnet-4-6",
       max_tokens: 3000,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
       messages: [{ role: "user", content: userMessage }],
-    }),
+    },
   });
 
-  if (!res.ok) {
-    return NextResponse.json({ text: "" }, { status: res.status });
+  if (!result.ok) {
+    // Return a real JSON error instead of letting the platform kill us.
+    return NextResponse.json(
+      { text: "", error: result.error },
+      { status: result.status || 504 }
+    );
   }
 
-  const data = await res.json();
-  const text = (data?.content || [])
-    .filter((b: { type: string }) => b?.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("\n");
+  const text = textOf(result.data);
 
   // Extract the WEBSITE: line Claude was asked to output first
   const websiteMatch = text.match(/^WEBSITE:\s*(.+)$/im);
