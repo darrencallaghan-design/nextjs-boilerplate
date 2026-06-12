@@ -855,6 +855,17 @@ export default function EngineAgent() {
   interface AutoDraft { id: string; rep_name: string; org_name: string; org_type: string; contact_name: string; contact_title: string; contact_email: string; contact_source: string; contact_email_verified: boolean; subject: string; subject_b: string; body: string; research: string; website: string; status: string; created_at: string; dismiss_reason?: string; }
   const [autoDrafts, setAutoDrafts] = useState<AutoDraft[]>([]);
   const [autoDraftsLoaded, setAutoDraftsLoaded] = useState(false);
+  // Inline email editing for discovered auto-drafts (cron often can't find an email)
+  const [editingAdEmail, setEditingAdEmail] = useState<string | null>(null);
+  const [adEmailText, setAdEmailText] = useState("");
+  const saveAdEmail = async (id: string) => {
+    const email = adEmailText.trim();
+    if (!email) return;
+    await fetch("/api/discover", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, contact_email: email }) });
+    setAutoDrafts(prev => prev.map(d => d.id === id ? { ...d, contact_email: email, contact_source: "Manual", contact_email_verified: true } : d));
+    setEditingAdEmail(null);
+    setAdEmailText("");
+  };
   const [discoveryAll, setDiscoveryAll] = useState<AutoDraft[]>([]);
   const [discoveryAllLoaded, setDiscoveryAllLoaded] = useState(false);
   const [repView, setRepView] = useState<"mine" | "all">("mine");
@@ -4365,7 +4376,42 @@ SUBJECT: Re: ${entry.subjectLine}
                                       <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>{draft.org_name}</span>
                                       {draft.org_type && <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(253,75,35,0.08)", color: ACCENT }}>{draft.org_type}</span>}
                                     </div>
-                                    {draft.contact_title && <div style={{ fontSize: 11, color: MUTED, marginBottom: 4 }}>{draft.contact_title}{draft.contact_email ? ` · ${draft.contact_email}` : ""}</div>}
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                                      {draft.contact_title && <span style={{ fontSize: 11, color: MUTED }}>{draft.contact_title}</span>}
+                                      {editingAdEmail === draft.id ? (
+                                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                                          <input
+                                            autoFocus
+                                            type="email"
+                                            value={adEmailText}
+                                            onChange={e => setAdEmailText(e.target.value)}
+                                            onKeyDown={e => { if (e.key === "Enter") saveAdEmail(draft.id); if (e.key === "Escape") { setEditingAdEmail(null); setAdEmailText(""); } }}
+                                            placeholder="Enter email address"
+                                            style={{ fontSize: 11, padding: "3px 8px", border: `1px solid ${ACCENT}`, borderRadius: 6, fontFamily: "inherit", outline: "none", width: 200, color: TEXT, background: SURFACE }}
+                                          />
+                                          <button onClick={() => saveAdEmail(draft.id)}
+                                            style={{ fontSize: 10, fontWeight: 600, padding: "3px 9px", background: ACCENT, color: ACCENT_TEXT, border: "none", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
+                                            Save
+                                          </button>
+                                          <button onClick={() => { setEditingAdEmail(null); setAdEmailText(""); }}
+                                            style={{ fontSize: 10, padding: "3px 7px", background: "none", color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
+                                            Cancel
+                                          </button>
+                                        </span>
+                                      ) : draft.contact_email ? (
+                                        <button onClick={() => { setEditingAdEmail(draft.id); setAdEmailText(draft.contact_email); }}
+                                          title={draft.contact_email_verified ? `Source: ${draft.contact_source || "found"} — click to edit` : `Unverified (${draft.contact_source || "constructed"}) — click to correct`}
+                                          style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: draft.contact_email_verified ? "rgba(0,146,98,0.08)" : "rgba(255,152,0,0.12)", color: draft.contact_email_verified ? SUCCESS : "#E65100", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                                          {draft.contact_email_verified ? "✓" : "⚠"} {draft.contact_email}
+                                        </button>
+                                      ) : (
+                                        <button onClick={() => { setEditingAdEmail(draft.id); setAdEmailText(""); }}
+                                          title="Click to add email address — the draft stays here until you send or dismiss it"
+                                          style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(229,57,53,0.1)", color: ERROR, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                                          ✕ No email — click to add
+                                        </button>
+                                      )}
+                                    </div>
                                     {draft.website && (
                                       <a href={draft.website.startsWith("http") ? draft.website : `https://${draft.website}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: INFO, textDecoration: "none", display: "inline-block", marginBottom: 4 }}>
                                         🌐 {draft.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
@@ -4377,6 +4423,7 @@ SUBJECT: Re: ${entry.subjectLine}
                                   <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
                                     <button
                                       onClick={() => {
+                                        if (!draft.contact_email) { setEditingAdEmail(draft.id); setAdEmailText(""); return; }
                                         const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(draft.contact_email)}&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
                                         window.open(gmailUrl, "_blank");
                                         // Mark auto_draft as sent

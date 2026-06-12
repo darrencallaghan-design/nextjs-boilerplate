@@ -1,9 +1,11 @@
 /**
- * Discovery pipeline agent functions — shared between the daily cron and AI Search.
- *
- * Extracted from app/api/cron/discovery/route.ts so both callers can import
- * the same logic without duplication.
+ * Discovery pipeline agent functions — shared between the daily cron, AI Search,
+ * and chat. All Anthropic calls go through lib/anthropic.ts (callAnthropic) so
+ * they get per-attempt timeouts, bounded retries, usage/cost logging to
+ * agent_logs, and the daily spend cap.
  */
+
+import { callAnthropic, textOf } from "./anthropic";
 
 export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -30,6 +32,10 @@ export const FALLBACK_CATEGORIES = [
   "disability advocacy and rehabilitation networks, health condition support organizations with national conventions",
   "agricultural, farming, and rural cooperative associations with national annual meetings and member travel",
 ];
+
+export interface DiscoveredContact {
+  name: string; title: string; email: string; source: string; emailVerified: boolean;
+}
 
 /** Extract the first complete JSON object containing "orgs" using brace counting.
  *  More reliable than a greedy regex when Claude surrounds the JSON with prose or
@@ -80,15 +86,13 @@ export async function discoverOrgsWithCategory(
   const alreadyInFull = existingOrgs.join(", ");
   const alreadyIn = alreadyInFull.length > 6000 ? alreadyInFull.slice(0, 6000) + " ... (more excluded)" : alreadyInFull || "none yet";
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": "web-search-2025-03-05",
-    },
-    body: JSON.stringify({
+  const result = await callAnthropic({
+    route: "discovery:orgs",
+    betas: ["web-search-2025-03-05"],
+    attemptTimeoutMs: 60_000,
+    maxAttempts: 2,
+    totalBudgetMs: 110_000,
+    body: {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1500,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
@@ -108,25 +112,19 @@ After searching, output ONLY this JSON (no prose, no explanation, no markdown):
 
 If you found nothing, output: {"orgs":[]}`,
       }],
-    }),
+    },
   });
 
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => "");
-    console.error(`[discovery] discoverOrgsWithCategory API error ${res.status}: ${errBody.slice(0, 300)}`);
+  if (!result.ok) {
+    console.error(`[discovery] discoverOrgsWithCategory failed: ${result.error}`);
     return [];
   }
-  const data = await res.json();
-  const text = (data?.content || [])
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("\n");
-
-  console.log(`[discovery] discoverOrgsWithCategory stop_reason=${data?.stop_reason} text_len=${text.length} preview=${JSON.stringify(text.slice(0, 300))}`);
+  const text = textOf(result.data);
+  console.log(`[discovery] discoverOrgsWithCategory stop_reason=${result.data?.stop_reason} text_len=${text.length} preview=${JSON.stringify(text.slice(0, 300))}`);
 
   const jsonStr = extractOrgsJson(text);
   if (!jsonStr) {
-    console.error("[discovery] discoverOrgsWithCategory: no orgs JSON found. stop_reason:", data?.stop_reason, "text:", text.slice(0, 500));
+    console.error("[discovery] discoverOrgsWithCategory: no orgs JSON found. stop_reason:", result.data?.stop_reason, "text:", text.slice(0, 500));
     return [];
   }
   try {
@@ -142,15 +140,13 @@ If you found nothing, output: {"orgs":[]}`,
 
 // ── Research subagent ─────────────────────────────────────────────────────────
 export async function researchOrg(orgName: string, orgType: string): Promise<{ research: string; website: string }> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": "web-search-2025-03-05",
-    },
-    body: JSON.stringify({
+  const result = await callAnthropic({
+    route: "discovery:research",
+    betas: ["web-search-2025-03-05"],
+    attemptTimeoutMs: 60_000,
+    maxAttempts: 1,
+    totalBudgetMs: 62_000,
+    body: {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 700,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }],
@@ -163,11 +159,10 @@ WEBSITE: [full URL]
 
 [4-5 specific facts with real numbers]`,
       }],
-    }),
+    },
   });
-  if (!res.ok) return { research: "", website: "" };
-  const data = await res.json();
-  const text = (data?.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n");
+  if (!result.ok) return { research: "", website: "" };
+  const text = textOf(result.data);
   const websiteMatch = text.match(/^WEBSITE:\s*(.+)$/im);
   const urlFallback = text.match(/https?:\/\/(?:www\.)?[a-zA-Z0-9-]+(?:\.[a-zA-Z]{2,})+/);
   const website = websiteMatch ? websiteMatch[1].trim().replace(/[.,)»"]+$/, "") : urlFallback ? urlFallback[0] : "";
@@ -176,18 +171,16 @@ WEBSITE: [full URL]
 }
 
 // ── Website Scraper subagent ──────────────────────────────────────────────────
-export async function scrapeWebsiteContacts(website: string, orgName: string): Promise<{ name: string; title: string; email: string; source: string; emailVerified: boolean }[]> {
+export async function scrapeWebsiteContacts(website: string, orgName: string): Promise<DiscoveredContact[]> {
   if (!website) return [];
   const base = website.replace(/\/$/, "");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": "web-search-2025-03-05",
-    },
-    body: JSON.stringify({
+  const result = await callAnthropic({
+    route: "discovery:scrape",
+    betas: ["web-search-2025-03-05"],
+    attemptTimeoutMs: 60_000,
+    maxAttempts: 1,
+    totalBudgetMs: 62_000,
+    body: {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 800,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }],
@@ -198,11 +191,10 @@ Extract senior titles only: Executive Director, CEO, President, COO, VP, Directo
 Return ONLY valid JSON: {"contacts":[{"name":"Full Name","title":"Title","email":"email or empty"}]}
 If nothing found: {"contacts":[]}`,
       }],
-    }),
+    },
   });
-  if (!res.ok) return [];
-  const data = await res.json();
-  const text = (data?.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n");
+  if (!result.ok) return [];
+  const text = textOf(result.data);
   const match = text.match(/\{[\s\S]*"contacts"[\s\S]*\}/);
   if (!match) return [];
   try {
@@ -213,17 +205,15 @@ If nothing found: {"contacts":[]}`,
 }
 
 // ── Contact Finder subagent ───────────────────────────────────────────────────
-export async function findContacts(orgName: string, orgType: string, domain: string): Promise<{ name: string; title: string; email: string; source: string; emailVerified: boolean }[]> {
+export async function findContacts(orgName: string, orgType: string, domain: string): Promise<DiscoveredContact[]> {
   const domainClean = (domain || "").replace(/https?:\/\//i, "").replace(/\/.*$/, "").trim();
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": "web-search-2025-03-05",
-    },
-    body: JSON.stringify({
+  const result = await callAnthropic({
+    route: "discovery:contacts",
+    betas: ["web-search-2025-03-05"],
+    attemptTimeoutMs: 60_000,
+    maxAttempts: 1,
+    totalBudgetMs: 62_000,
+    body: {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 800,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
@@ -234,11 +224,10 @@ Search: site:rocketreach.co "${orgName}" and "${orgName}" executive director pre
 Priority titles: Executive Director, CEO, President, VP Partnerships, Director Business Development, COO.
 Return ONLY valid JSON: {"people":[{"name":"Full Name","title":"Title","email":"email or empty","source":"Website|RocketReach|Predicted"}]}`,
       }],
-    }),
+    },
   });
-  if (!res.ok) return [];
-  const data = await res.json();
-  const text = (data?.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n");
+  if (!result.ok) return [];
+  const text = textOf(result.data);
   const match = text.match(/\{[\s\S]*"people"[\s\S]*\}/);
   if (!match) return [];
   try {
@@ -251,6 +240,84 @@ Return ONLY valid JSON: {"people":[{"name":"Full Name","title":"Title","email":"
   } catch { return []; }
 }
 
+// ── Email Miner subagent (pass 2) ─────────────────────────────────────────────
+/**
+ * Targeted second pass for contacts that came back without an email address.
+ * Mirrors the proven /api/contacts pass-2 strategy: mine RocketReach snippets,
+ * staff/contact pages, and press releases; extract the org's email format from
+ * any known address and construct the rest. Uses Sonnet — email mining is the
+ * step where the cheaper model demonstrably underperforms.
+ *
+ * Mutates the passed contacts in place (fills email/source/emailVerified) and
+ * returns the same array. One batched call per org, only when needed.
+ */
+export async function mineMissingEmails(
+  orgName: string, website: string, contacts: DiscoveredContact[],
+): Promise<DiscoveredContact[]> {
+  const domainClean = (website || "").replace(/https?:\/\//i, "").replace(/\/.*$/, "").trim();
+  const needsEmail = contacts.filter(c => !c.email && c.source !== "Fallback");
+  if (!needsEmail.length) return contacts;
+
+  const hasEmail = contacts.filter(c => c.email);
+  const knownPattern = hasEmail.length > 0
+    ? `Known emails at this org: ${hasEmail.map(c => `${c.name} → ${c.email}`).join(", ")}. Extract the email format and apply it to the missing contacts.`
+    : "";
+
+  const result = await callAnthropic({
+    route: "discovery:mine-emails",
+    betas: ["web-search-2025-03-05"],
+    attemptTimeoutMs: 75_000,
+    maxAttempts: 1,
+    totalBudgetMs: 77_000,
+    body: {
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
+      messages: [{
+        role: "user",
+        content: `I need email addresses for these contacts at "${orgName}" (domain: ${domainClean || "unknown"}):
+${needsEmail.map(c => `- ${c.name}, ${c.title}`).join("\n")}
+
+${knownPattern}
+
+SEARCH 1: ${domainClean ? `site:${domainClean}` : `"${orgName}" staff`} email OR contact OR mailto
+${domainClean ? `Visit ${domainClean}/contact and ${domainClean}/staff for any email addresses shown.` : "Visit their website contact/staff page for emails."}
+
+SEARCH 2: site:rocketreach.co ${needsEmail.map(c => `"${c.name}"`).join(" OR ")}
+Read every snippet — full emails often appear in preview text without clicking through.
+
+SEARCH 3: "${orgName}" email format ${domainClean ? `"@${domainClean}"` : "contact staff"}
+Any email at their domain reveals the format for constructing others.
+
+RULES:
+- "found": the exact address appeared in a search result or on their site.
+- "constructed": you built it from the org's known email format (e.g. first.last@domain). Only construct if you confirmed the format from at least one real address at this domain.
+- If you can't find or confidently construct one, return an empty email for that person. Never guess a format you haven't seen.
+
+Return ONLY valid JSON:
+{"emails":[{"name":"Full Name","email":"address or empty","method":"found|constructed","source":"Website|RocketReach|Press|Pattern"}]}`,
+      }],
+    },
+  });
+  if (!result.ok) return contacts;
+  const text = textOf(result.data);
+  const match = text.match(/\{[\s\S]*"emails"[\s\S]*\}/);
+  if (!match) return contacts;
+  try {
+    const parsed = JSON.parse(match[0]);
+    const found: { name?: string; email?: string; method?: string; source?: string }[] = parsed.emails || [];
+    for (const f of found) {
+      if (!f.name || !f.email) continue;
+      const target = contacts.find(c => c.name.toLowerCase().trim() === f.name!.toLowerCase().trim() && !c.email);
+      if (!target) continue;
+      target.email = f.email.trim();
+      target.source = f.source || (f.method === "constructed" ? "Pattern" : "Web");
+      target.emailVerified = f.method === "found";
+    }
+  } catch { /* keep originals */ }
+  return contacts;
+}
+
 export function stripDashes(t: string): string {
   return t.replace(/ [—–] /g, ", ").replace(/[—–] /g, "").replace(/ [—–]/g, "").replace(/[—–]/g, ", ");
 }
@@ -261,16 +328,17 @@ export async function draftEmail(
   orgName: string, orgType: string, research: string, styleContext: string,
   retries = 3
 ): Promise<{ subject: string; subjectB: string; body: string }> {
-  for (let i = 0; i < retries; i++) {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY || "", "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: `${styleContext}\n\nWrite a partnership outreach email to ${contact.name}, ${contact.title} at ${orgName} (${orgType}).
+  const result = await callAnthropic({
+    route: "discovery:draft",
+    attemptTimeoutMs: 30_000,
+    maxAttempts: Math.max(1, Math.min(retries, 3)),
+    totalBudgetMs: 95_000,
+    body: {
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1000,
+      messages: [{
+        role: "user",
+        content: `${styleContext}\n\nWrite a partnership outreach email to ${contact.name}, ${contact.title} at ${orgName} (${orgType}).
 ENGINE: Hotel booking platform. Say "Engine" never "Engine.com". Hotels only.
 VALUE: 1) Preferred hotel rates for org events/members 2) Referral revenue back to the org.
 ${research ? `RESEARCH:\n${research}\n` : ""}
@@ -282,22 +350,18 @@ SUBJECT_A: [curiosity/question style, org-specific]
 SUBJECT_B: [value/direct style, leads with the benefit]
 
 [email body]`,
-        }],
-      }),
-    });
-    if (res.status === 429) { await sleep(4000 * (i + 1)); continue; }
-    if (!res.ok) return { subject: "", subjectB: "", body: "" };
-    const data = await res.json();
-    const raw = (data?.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n");
-    // Handle both plain "SUBJECT_A: ..." and markdown bold "**SUBJECT_A:** ..."
-    const aMatch = raw.match(/^\*{0,2}SUBJECT[_ ]A:\*{0,2}\s*(.+)$/im);
-    const bMatch = raw.match(/^\*{0,2}SUBJECT[_ ]B:\*{0,2}\s*(.+)$/im);
-    const body = raw.replace(/^\*{0,2}SUBJECT[_ ][AB]:\*{0,2}\s*.+\n*/gim, "").replace(/^---\s*\n*/gm, "").trim();
-    return {
-      subject: aMatch ? stripDashes(aMatch[1].trim()) : `${orgName} + Engine`,
-      subjectB: bMatch ? stripDashes(bMatch[1].trim()) : "",
-      body: stripDashes(body),
-    };
-  }
-  return { subject: "", subjectB: "", body: "" };
+      }],
+    },
+  });
+  if (!result.ok) return { subject: "", subjectB: "", body: "" };
+  const raw = textOf(result.data);
+  // Handle both plain "SUBJECT_A: ..." and markdown bold "**SUBJECT_A:** ..."
+  const aMatch = raw.match(/^\*{0,2}SUBJECT[_ ]A:\*{0,2}\s*(.+)$/im);
+  const bMatch = raw.match(/^\*{0,2}SUBJECT[_ ]B:\*{0,2}\s*(.+)$/im);
+  const body = raw.replace(/^\*{0,2}SUBJECT[_ ][AB]:\*{0,2}\s*.+\n*/gim, "").replace(/^---\s*\n*/gm, "").trim();
+  return {
+    subject: aMatch ? stripDashes(aMatch[1].trim()) : `${orgName} + Engine`,
+    subjectB: bMatch ? stripDashes(bMatch[1].trim()) : "",
+    body: stripDashes(body),
+  };
 }

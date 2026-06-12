@@ -61,14 +61,20 @@ export async function GET(req: NextRequest) {
 // status: "sent" | "dismissed"
 // dismiss_reason: "wrong_org" (exclude permanently) | "bad_draft" (org stays in pool)
 export async function PATCH(req: NextRequest) {
-  const { id, status, dismiss_reason } = await req.json();
+  const { id, status, dismiss_reason, contact_email } = await req.json();
 
-  if (!id || !status) {
-    return NextResponse.json({ error: "Missing id or status" }, { status: 400 });
+  if (!id || (!status && contact_email === undefined)) {
+    return NextResponse.json({ error: "Missing id, and either status or contact_email" }, { status: 400 });
   }
 
-  const update: Record<string, string> = { status };
+  const update: Record<string, string | boolean> = {};
+  if (status) update.status = status;
   if (dismiss_reason) update.dismiss_reason = dismiss_reason;
+  if (contact_email !== undefined) {
+    update.contact_email = String(contact_email).trim();
+    update.contact_source = "Manual";
+    update.contact_email_verified = true;
+  }
 
   const { error } = await supabase
     .from("auto_drafts")

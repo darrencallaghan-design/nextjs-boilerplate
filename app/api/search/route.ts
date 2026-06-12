@@ -21,6 +21,7 @@ import {
   scrapeWebsiteContacts,
   findContacts,
   draftEmail,
+  mineMissingEmails,
 } from "@/lib/discovery-agents";
 
 export const maxDuration = 300;
@@ -178,6 +179,9 @@ export async function POST(req: NextRequest) {
       if (!contacts.length) {
         contacts.push({ name: "Program Director", title: "Director of Programs", email: "", source: "Fallback", emailVerified: false });
       }
+
+      // Pass 2: mine emails for any contacts that came back without one
+      await mineMissingEmails(org.name, website, contacts);
 
       const contact = contacts[0];
       const draft = await draftEmail(contact, org.name, org.type, research, styleContext);
