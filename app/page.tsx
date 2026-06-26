@@ -841,6 +841,7 @@ export default function EngineAgent() {
   const [reportEntries, setReportEntries] = useState<ReportEntry[]>([]);
   const [waveNumber, setWaveNumber] = useState(1);
   const [reportSubTab, setReportSubTab] = useState<"log" | "summary" | "followups">("log");
+  const [dashRange, setDashRange] = useState<"7d" | "30d" | "90d" | "all">("30d");
   // ── Orchestrator state ────────────────────────────────────────────────────
   const [orchRunId, setOrchRunId] = useState<string | null>(null);
   const [orchProgress, setOrchProgress] = useState<{ total: number; completed: number } | null>(null);
@@ -3961,9 +3962,7 @@ SUBJECT: Re: ${entry.subjectLine}
                   ) : reportSubTab === "summary" ? (
                     <div>
                       {(() => {
-                        // ── Date range filter state (local to this render) ───────────────────
-                        const dashRange = (window as unknown as Record<string,unknown>).__dashRange as string || "30d";
-                        const setDashRange = (r: string) => { (window as unknown as Record<string,unknown>).__dashRange = r; setReportSubTab("summary"); };
+                        // dashRange + setDashRange come from component state above
                         const now = new Date();
                         const cutoff = dashRange === "7d" ? new Date(now.getTime() - 7*86400000)
                           : dashRange === "30d" ? new Date(now.getTime() - 30*86400000)
@@ -4108,7 +4107,7 @@ SUBJECT: Re: ${entry.subjectLine}
                             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 20 }}>
                               <span style={{ fontSize: 11, color: MUTED, marginRight: 4 }}>Showing</span>
                               {(["7d","30d","90d","all"] as const).map(r => (
-                                <button key={r} onClick={() => setDashRange(r)}
+                                <button key={r} onClick={() => setDashRange(r as "7d" | "30d" | "90d" | "all")}
                                   style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, border: `1px solid ${dashRange === r ? ACCENT : BORDER}`, background: dashRange === r ? "rgba(253,75,35,0.08)" : "transparent", color: dashRange === r ? ACCENT : MUTED, cursor: "pointer", fontFamily: "inherit", fontWeight: dashRange === r ? 600 : 400 }}>
                                   {r === "all" ? "All time" : r}
                                 </button>
